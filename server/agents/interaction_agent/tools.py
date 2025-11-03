@@ -258,20 +258,8 @@ def handle_tool_call(name: str, arguments: Any) -> ToolResult:
         if name == "wait":
             return wait(**args)
 
-        concatenated = _split_known_tools(name)
-        if len(concatenated) > 1:
-            logger.warning(
-                "tool call combined multiple tools",
-                extra={"tool": name, "components": concatenated},
-            )
-            return ToolResult(
-                success=False,
-                payload={
-                    "error": "Each tool call must target exactly one tool.",
-                    "requested_tools": concatenated,
-                },
-            )
-
+        # Note: Concatenated tool names are now detected earlier in runtime.py
+        # This allows us to provide better error messages to the LLM
         logger.warning("unexpected tool", extra={"tool": name})
         return ToolResult(success=False, payload={"error": f"Unknown tool: {name}"})
     except json.JSONDecodeError:

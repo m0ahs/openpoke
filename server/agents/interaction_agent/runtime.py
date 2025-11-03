@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set
 
 from .agent import build_system_prompt, prepare_message_with_history
-from .tools import ToolResult, get_tool_schemas, handle_tool_call
+from .tools import ToolResult, get_tool_schemas, handle_tool_call, _split_known_tools
 from ...config import get_settings
 from ...services.conversation import get_conversation_log, get_working_memory_log
 from ...openrouter_client import request_chat_completion
@@ -238,6 +238,27 @@ class InteractionAgentRuntime:
             name = function_block.get("name")
             if not isinstance(name, str) or not name:
                 logger.warning("Skipping tool call without name", extra={"tool": raw})
+                continue
+
+            # Check for concatenated tool names BEFORE parsing arguments
+            concatenated = _split_known_tools(name)
+            if len(concatenated) > 1:
+                logger.warning(
+                    "Tool call combined multiple tools",
+                    extra={"tool": name, "components": concatenated},
+                )
+                parsed.append(
+                    _ToolCall(
+                        identifier=raw.get("id"),
+                        name=name,
+                        arguments={
+                            "__invalid_arguments__": (
+                                "Each tool call must target exactly one tool. "
+                                f"Detected tools: {', '.join(concatenated)}"
+                            )
+                        },
+                    )
+                )
                 continue
 
             arguments, error = self._parse_tool_arguments(function_block.get("arguments"))
