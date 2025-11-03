@@ -20,7 +20,7 @@ function uiToOpenAIContent(messages: UIMessage[]): { role: string; content: stri
 }
 
 export async function POST(req: Request) {
-  let body: any;
+  let body: unknown;
   try {
     body = await req.json();
   } catch (e) {
@@ -28,7 +28,7 @@ export async function POST(req: Request) {
     return new Response('Invalid JSON', { status: 400 });
   }
 
-  const { messages } = body || {};
+  const { messages } = (body as Record<string, unknown>) || {};
   if (!Array.isArray(messages) || messages.length === 0) {
     return new Response('Missing messages', { status: 400 });
   }
@@ -66,11 +66,12 @@ export async function POST(req: Request) {
     } finally {
       clearTimeout(timeoutId);
     }
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error('[chat-proxy] upstream error', e);
-    if (e.name === 'AbortError') {
+    if (e instanceof Error && e.name === 'AbortError') {
       return new Response('Request timeout - the server took too long to respond', { status: 504 });
     }
-    return new Response(e?.message || 'Upstream error', { status: 502 });
+    const message = e instanceof Error ? e.message : 'Upstream error';
+    return new Response(message, { status: 502 });
   }
 }
