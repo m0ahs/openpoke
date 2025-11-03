@@ -57,8 +57,10 @@ class TriggerScheduler:
                 logger.info("Trigger scheduler stopped")
 
     async def _run(self) -> None:
+        logger.info("Trigger scheduler loop starting")
         try:
             while self._running:
+                logger.info("Trigger scheduler polling cycle")
                 await self._poll_once()
                 await asyncio.sleep(self._poll_interval)
         except asyncio.CancelledError:  # pragma: no cover - shutdown path
@@ -67,6 +69,7 @@ class TriggerScheduler:
             logger.exception("Trigger scheduler loop crashed", extra={"error": str(exc)})
 
     async def _poll_once(self) -> None:
+        logger.info("Starting trigger poll")
         now = _utc_now()
         # Look for triggers due in the next 30 seconds to account for polling interval
         look_ahead = now + timedelta(seconds=30)
