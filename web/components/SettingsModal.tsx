@@ -93,11 +93,12 @@ function coerceEmailFrom(value: unknown): string | null {
     return value;
   }
   if (value && typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
     const candidate =
-      (value as any).emailAddress ??
-      (value as any).email ??
-      (value as any).value ??
-      (value as any).address;
+      obj.emailAddress ??
+      obj.email ??
+      obj.value ??
+      obj.address;
     if (typeof candidate === 'string' && candidate.includes('@')) {
       return candidate;
     }
@@ -105,49 +106,63 @@ function coerceEmailFrom(value: unknown): string | null {
   return null;
 }
 
-function deriveEmailFromPayload(payload: any): string {
-  if (!payload) return '';
-  const profileSlice = payload?.profile;
-  const candidateObjects: any[] = [];
+function deriveEmailFromPayload(payload: unknown): string {
+  if (!payload || typeof payload !== 'object') return '';
+  const data = payload as Record<string, unknown>;
+  const profileSlice = data?.profile;
+  const candidateObjects: Record<string, unknown>[] = [];
 
   if (profileSlice && typeof profileSlice === 'object') {
-    candidateObjects.push(profileSlice);
-    if ((profileSlice as any).response_data && typeof (profileSlice as any).response_data === 'object') {
-      candidateObjects.push((profileSlice as any).response_data);
+    const profile = profileSlice as Record<string, unknown>;
+    candidateObjects.push(profile);
+    if (profile.response_data && typeof profile.response_data === 'object') {
+      candidateObjects.push(profile.response_data as Record<string, unknown>);
     }
-    if (Array.isArray((profileSlice as any).items)) {
-      for (const entry of (profileSlice as any).items as any[]) {
+    if (Array.isArray(profile.items)) {
+      for (const entry of profile.items) {
         if (entry && typeof entry === 'object') {
-          if (typeof entry.data === 'object') candidateObjects.push(entry.data);
-          if (typeof entry.response_data === 'object') candidateObjects.push(entry.response_data);
-          if (typeof entry.profile === 'object') candidateObjects.push(entry.profile);
+          const item = entry as Record<string, unknown>;
+          if (typeof item.data === 'object' && item.data !== null) {
+            candidateObjects.push(item.data as Record<string, unknown>);
+          }
+          if (typeof item.response_data === 'object' && item.response_data !== null) {
+            candidateObjects.push(item.response_data as Record<string, unknown>);
+          }
+          if (typeof item.profile === 'object' && item.profile !== null) {
+            candidateObjects.push(item.profile as Record<string, unknown>);
+          }
         }
       }
     }
   }
 
-  const directCandidates = [payload?.email];
+  const directCandidates = [data?.email];
 
   for (const obj of candidateObjects) {
     if (!obj || typeof obj !== 'object') continue;
+    const record = obj as Record<string, unknown>;
+    const profile = record?.profile as Record<string, unknown> | undefined;
+    const user = record?.user as Record<string, unknown> | undefined;
+    const objData = record?.data as Record<string, unknown> | undefined;
     directCandidates.push(
-      obj?.email,
-      obj?.email_address,
-      obj?.emailAddress,
-      obj?.profile?.email,
-      obj?.profile?.emailAddress,
-      obj?.profile?.email_address,
-      obj?.user?.email,
-      obj?.user?.emailAddress,
-      obj?.user?.email_address,
-      obj?.data?.email,
-      obj?.data?.emailAddress,
-      obj?.data?.email_address,
+      record?.email,
+      record?.email_address,
+      record?.emailAddress,
+      profile?.email,
+      profile?.emailAddress,
+      profile?.email_address,
+      user?.email,
+      user?.emailAddress,
+      user?.email_address,
+      objData?.email,
+      objData?.emailAddress,
+      objData?.email_address,
     );
-    const emailAddresses = (obj as any).emailAddresses;
+    const emailAddresses = record.emailAddresses;
     if (Array.isArray(emailAddresses)) {
       for (const entry of emailAddresses) {
-        const email = coerceEmailFrom(entry) ?? coerceEmailFrom((entry as any)?.value);
+        const entryObj = entry as Record<string, unknown> | undefined;
+        const email = coerceEmailFrom(entry) ?? coerceEmailFrom(entryObj?.value);
         if (email) return email;
       }
     }
@@ -241,15 +256,15 @@ export default function SettingsModal({
   const gmailProfileDetails = useMemo(() => {
     if (!gmailProfile) return [] as { label: string; value: string }[];
     const details: { label: string; value: string }[] = [];
-    const messagesTotal = (gmailProfile as any)?.messagesTotal;
+    const messagesTotal = gmailProfile?.messagesTotal;
     if (typeof messagesTotal === 'number') {
       details.push({ label: 'Messages', value: messagesTotal.toLocaleString() });
     }
-    const threadsTotal = (gmailProfile as any)?.threadsTotal;
+    const threadsTotal = gmailProfile?.threadsTotal;
     if (typeof threadsTotal === 'number') {
       details.push({ label: 'Threads', value: threadsTotal.toLocaleString() });
     }
-    const historyId = (gmailProfile as any)?.historyId ?? (gmailProfile as any)?.historyID;
+    const historyId = gmailProfile?.historyId ?? gmailProfile?.historyID;
     if (historyId !== undefined && historyId !== null && historyId !== '') {
       details.push({ label: 'History ID', value: String(historyId) });
     }
@@ -299,8 +314,9 @@ export default function SettingsModal({
       } else {
         setGmailStatusMessage('Connection initiated. Refresh status once authorization completes.');
       }
-    } catch (e: any) {
-      setGmailStatusMessage(e?.message || 'Failed to connect Gmail');
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Failed to connect Gmail';
+      setGmailStatusMessage(message);
     } finally {
       setConnectingGmail(false);
     }
@@ -372,11 +388,12 @@ export default function SettingsModal({
           localStorage.removeItem('gmail_email');
         } catch {}
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       setGmailConnected(false);
       setGmailProfile(null);
       setGmailEmail('');
-      setGmailStatusMessage(e?.message || 'Failed to check Gmail status');
+      const message = e instanceof Error ? e.message : 'Failed to check Gmail status';
+      setGmailStatusMessage(message);
     } finally {
       setIsRefreshingGmail(false);
     }
@@ -417,8 +434,9 @@ export default function SettingsModal({
         localStorage.removeItem('gmail_connection_request_id');
         localStorage.removeItem('alyn_user_id');
       } catch {}
-    } catch (e: any) {
-      setGmailStatusMessage(e?.message || 'Failed to disconnect Gmail');
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Failed to disconnect Gmail';
+      setGmailStatusMessage(message);
     } finally {
       setIsDisconnecting(false);
     }

@@ -19,22 +19,30 @@ const formatEscapeCharacters = (text: string): string => {
     .replace(/\\\\/g, '\\');
 };
 
-const isRenderableMessage = (entry: any) =>
-  typeof entry?.role === 'string' &&
-  typeof entry?.content === 'string' &&
-  entry.content.trim().length > 0;
+const isRenderableMessage = (entry: unknown) => {
+  const msg = entry as Record<string, unknown>;
+  return (
+    typeof msg?.role === 'string' &&
+    typeof msg?.content === 'string' &&
+    msg.content.trim().length > 0
+  );
+};
 
-const toBubbles = (payload: any): ChatBubble[] => {
-  if (!Array.isArray(payload?.messages)) return [];
+const toBubbles = (payload: unknown): ChatBubble[] => {
+  const data = payload as Record<string, unknown>;
+  if (!Array.isArray(data?.messages)) return [];
 
-  return payload.messages
+  return data.messages
     .filter(isRenderableMessage)
-    .map((message: any, index: number) => ({
-      id: `history-${index}`,
-      role: message.role,
-      text: formatEscapeCharacters(message.content),
-      timestamp: typeof message.timestamp === 'string' ? message.timestamp : null,
-    }));
+    .map((message: unknown, index: number) => {
+      const msg = message as Record<string, unknown>;
+      return {
+        id: `history-${index}`,
+        role: msg.role as string,
+        text: formatEscapeCharacters(msg.content as string),
+        timestamp: typeof msg.timestamp === 'string' ? msg.timestamp : null,
+      };
+    });
 };
 
 export default function Page() {
@@ -57,8 +65,8 @@ export default function Page() {
       if (!res.ok) return;
       const data = await res.json();
       setMessages(toBubbles(data));
-    } catch (err: any) {
-      if (err?.name === 'AbortError') return;
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === 'AbortError') return;
       console.error('Failed to load chat history', err);
     }
   }, []);
@@ -141,9 +149,10 @@ export default function Page() {
           const detail = await res.text();
           throw new Error(detail || `Request failed (${res.status})`);
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('Failed to send message', err);
-        setError(err?.message || 'Failed to send message');
+        const errorMessage = err instanceof Error ? err.message : 'Failed to send message';
+        setError(errorMessage);
         // Remove the optimistic message on error
         setMessages(prev => prev.filter(msg => msg.id !== userMessage.id));
         setIsWaitingForResponse(false);

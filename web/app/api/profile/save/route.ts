@@ -29,9 +29,10 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(data);
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to save profile';
     return NextResponse.json(
-      { error: error.message || 'Failed to save profile' },
+      { error: message },
       { status: 500 }
     );
   }

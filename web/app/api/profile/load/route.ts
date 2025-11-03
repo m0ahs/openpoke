@@ -27,9 +27,10 @@ export async function GET() {
     }
 
     return NextResponse.json(data);
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to load profile';
     return NextResponse.json(
-      { ok: false, error: error.message || 'Failed to load profile' },
+      { ok: false, error: message },
       { status: 500 }
     );
   }
