@@ -222,7 +222,7 @@ export default function Page() {
   const clearError = useCallback(() => setError(null), [setError]);
 
   return (
-    <main className="chat-bg flex h-full flex-col p-2 sm:p-6">
+    <main className="chat-bg flex h-full flex-col p-1 sm:p-2 md:p-6">
       <div className="chat-wrap flex h-full flex-col">
         <ChatHeader onOpenSettings={openSettings} />
 
@@ -234,7 +234,7 @@ export default function Page() {
             onScroll={handleScroll}
           />
 
-          <div className="border-t border-gray-200 px-2 pt-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] sm:px-3 sm:pt-3 sm:pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
+          <div className="border-t border-gray-200 px-1 pt-1 pb-[calc(env(safe-area-inset-bottom)+0.25rem)] sm:px-2 sm:pt-2 sm:pb-[calc(env(safe-area-inset-bottom)+0.5rem)] md:px-3 md:pt-3 md:pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
             {error && <ErrorBanner message={error} onDismiss={clearError} />}
 
             <ChatInput
