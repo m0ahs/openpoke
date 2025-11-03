@@ -8,6 +8,7 @@ from typing import Any, Dict, Iterable, List, Optional
 from ...logging_config import logger
 from .composio_exa import ExaError, get_exa_client
 
+
 _DEFAULT_MAX_RESULTS = 5
 _MAX_RESULTS = 20
 
