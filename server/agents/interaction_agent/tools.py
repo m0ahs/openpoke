@@ -3,7 +3,7 @@
 import asyncio
 import json
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 from ...logging_config import logger
 from ...services.conversation import get_conversation_log
@@ -21,6 +21,30 @@ class ToolResult:
     recorded_reply: bool = False
 
 # Tool schemas for OpenRouter
+_KNOWN_TOOL_NAMES = {
+    "send_message_to_agent",
+    "send_message_to_user",
+    "send_draft",
+    "wait",
+}
+
+
+def _split_known_tools(name: str) -> List[str]:
+    """Attempt to split a concatenated tool name into known tool identifiers."""
+
+    remaining = name
+    result: List[str] = []
+    sorted_tools = sorted(_KNOWN_TOOL_NAMES, key=len, reverse=True)
+
+    while remaining:
+        match = next((tool for tool in sorted_tools if remaining.startswith(tool)), None)
+        if match is None:
+            return []
+        result.append(match)
+        remaining = remaining[len(match) :]
+
+    return result
+
 TOOL_SCHEMAS = [
     {
         "type": "function",
@@ -233,6 +257,20 @@ def handle_tool_call(name: str, arguments: Any) -> ToolResult:
             return send_draft(**args)
         if name == "wait":
             return wait(**args)
+
+        concatenated = _split_known_tools(name)
+        if len(concatenated) > 1:
+            logger.warning(
+                "tool call combined multiple tools",
+                extra={"tool": name, "components": concatenated},
+            )
+            return ToolResult(
+                success=False,
+                payload={
+                    "error": "Each tool call must target exactly one tool.",
+                    "requested_tools": concatenated,
+                },
+            )
 
         logger.warning("unexpected tool", extra={"tool": name})
         return ToolResult(success=False, payload={"error": f"Unknown tool: {name}"})

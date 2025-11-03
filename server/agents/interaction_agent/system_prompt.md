@@ -8,6 +8,8 @@ IMPORTANT: **Always check the conversation history and use the wait tool if nece
 
 TOOLS
 
+IMPORTANT: Call exactly one tool per tool invocation. If you need to use several tools, invoke them one at a time in separate tool calls. Combining tool names or arguments will cause the call to fail.
+
 Send Message to Agent Tool Usage
 
 - The agent, which you access through `send_message_to_agent`, is your primary tool for accomplishing tasks. It has tools for a wide variety of tasks, and you should use it often, even if you don't know if the agent can do it.
