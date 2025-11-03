@@ -147,6 +147,24 @@ class AgentRoster:
 
         return list(self._agents)
 
+    def remove_agent(self, agent_name: str) -> bool:
+        """Remove an agent from the roster using case-insensitive matching."""
+
+        cleaned = self._clean_name(agent_name)
+        if not cleaned:
+            return False
+
+        target = self._normalized_key(cleaned)
+        remaining = [name for name in self._agents if self._normalized_key(name) != target]
+
+        if len(remaining) == len(self._agents):
+            return False
+
+        self._agents = remaining
+        self.save()
+        logger.info("Removed agent from roster", extra={"removed_agent": cleaned})
+        return True
+
     def clear(self) -> None:
         """Clear the agent roster."""
 

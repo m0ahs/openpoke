@@ -26,6 +26,7 @@ _KNOWN_TOOL_NAMES = {
     "send_message_to_user",
     "send_draft",
     "wait",
+    "remove_agent",
 }
 
 
@@ -127,6 +128,29 @@ TOOL_SCHEMAS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "remove_agent",
+            "description": "Remove an execution agent from the roster when it is no longer needed or is a duplicate.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "agent_name": {
+                        "type": "string",
+                        "description": "Exact name of the agent to remove (case-insensitive).",
+                    },
+                    "clear_logs": {
+                        "type": "boolean",
+                        "description": "Optional flag to delete the agent's execution logs as well.",
+                        "default": False,
+                    },
+                },
+                "required": ["agent_name"],
+                "additionalProperties": False,
+            },
+        },
+    },
 ]
 
 _EXECUTION_BATCH_MANAGER = ExecutionBatchManager()
@@ -170,6 +194,40 @@ def send_message_to_agent(agent_name: str, instructions: str) -> ToolResult:
             "status": "submitted",
             "agent_name": agent_name,
             "new_agent_created": is_new,
+        },
+    )
+
+
+def remove_agent(agent_name: str, clear_logs: bool = False) -> ToolResult:
+    """Remove an agent entry from the roster."""
+
+    roster = get_agent_roster()
+    roster.load()
+    roster.prune_duplicates()
+
+    removed = roster.remove_agent(agent_name)
+
+    if removed and clear_logs:
+        get_execution_agent_logs().remove_agent_logs(agent_name)
+
+    if removed:
+        logger.info("Agent removed via tool", extra={"agent_name": agent_name})
+        return ToolResult(
+            success=True,
+            payload={
+                "status": "removed",
+                "agent_name": agent_name,
+                "logs_cleared": bool(clear_logs),
+            },
+        )
+
+    logger.info("Agent removal requested but no matching entry found", extra={"agent_name": agent_name})
+    return ToolResult(
+        success=False,
+        payload={
+            "status": "not_found",
+            "agent_name": agent_name,
+            "logs_cleared": False,
         },
     )
 
@@ -257,6 +315,8 @@ def handle_tool_call(name: str, arguments: Any) -> ToolResult:
             return send_draft(**args)
         if name == "wait":
             return wait(**args)
+        if name == "remove_agent":
+            return remove_agent(**args)
 
         # Note: Concatenated tool names are now detected earlier in runtime.py
         # This allows us to provide better error messages to the LLM
