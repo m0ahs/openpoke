@@ -6,9 +6,62 @@ from typing import Dict, List
 
 from ...services.execution import get_agent_roster
 from ...services.user_profile import get_user_profile
+from ..execution_agent.tools.registry import get_tool_schemas
 
 _prompt_path = Path(__file__).parent / "system_prompt.md"
 SYSTEM_PROMPT = _prompt_path.read_text(encoding="utf-8").strip()
+
+
+def _generate_available_tools_section() -> str:
+    """
+    Generate a formatted section listing all available tools grouped by category.
+    
+    Returns:
+        Markdown-formatted string with categorized tool listings
+    """
+    tool_schemas = get_tool_schemas()
+    
+    # Group tools by category
+    categories: Dict[str, List[str]] = {
+        "Gmail": [],
+        "Google Calendar": [],
+        "Google Super": [],
+        "Search": [],
+        "Triggers": [],
+        "Tasks": [],
+    }
+    
+    for schema in tool_schemas:
+        func = schema.get("function", {})
+        name = func.get("name", "")
+        description = func.get("description", "")
+        
+        if name.startswith("gmail_"):
+            categories["Gmail"].append(f"- **{name}**: {description}")
+        elif name.startswith("calendar_"):
+            categories["Google Calendar"].append(f"- **{name}**: {description}")
+        elif name.startswith("googlesuper_"):
+            categories["Google Super"].append(f"- **{name}**: {description}")
+        elif name.startswith("search_") or name.startswith("exa_"):
+            categories["Search"].append(f"- **{name}**: {description}")
+        elif name.startswith("trigger_"):
+            categories["Triggers"].append(f"- **{name}**: {description}")
+        elif name.startswith("task_"):
+            categories["Tasks"].append(f"- **{name}**: {description}")
+    
+    # Build the formatted output
+    lines = ["# AVAILABLE TOOLS", ""]
+    lines.append("Your execution agents have access to the following tools. When a user asks what you can do or what tools are available, reference these capabilities:")
+    lines.append("")
+    
+    for category, tools in categories.items():
+        if tools:
+            lines.append(f"## {category}")
+            lines.append("")
+            lines.extend(tools)
+            lines.append("")
+    
+    return "\n".join(lines)
 
 
 # Load and return the pre-defined system prompt from markdown file with user profile
@@ -17,6 +70,13 @@ def build_system_prompt() -> str:
     profile_store = get_user_profile()
     profile = profile_store.load()
 
+    # Start with base prompt
+    sections = [SYSTEM_PROMPT]
+    
+    # Add available tools section
+    sections.append(_generate_available_tools_section())
+
+    # Add user profile section
     user_context = []
     if profile.get("userName"):
         user_context.append(f"- User's name: {profile['userName']}")
@@ -27,9 +87,9 @@ def build_system_prompt() -> str:
 
     if user_context:
         profile_section = "\n\n# USER PROFILE\n\nYou have access to the following information about the user:\n\n" + "\n".join(user_context) + "\n\nUse this information to personalize your responses when relevant. Remember these details naturally without explicitly mentioning you have this information unless necessary."
-        return SYSTEM_PROMPT + profile_section
+        sections.append(profile_section)
 
-    return SYSTEM_PROMPT
+    return "\n\n".join(sections)
 
 
 # Build structured message with conversation history, active agents, and current turn
