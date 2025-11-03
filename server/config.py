@@ -50,12 +50,16 @@ class Settings(BaseModel):
     server_host: str = Field(default=os.getenv("OPENPOKE_HOST", "0.0.0.0"))
     server_port: int = Field(default=_env_int("OPENPOKE_PORT", 8001))
 
-    # LLM model selection - can be overridden via environment variables
-    interaction_agent_model: str = Field(default=os.getenv("INTERACTION_AGENT_MODEL", "anthropic/claude-sonnet-4"))
-    execution_agent_model: str = Field(default=os.getenv("EXECUTION_AGENT_MODEL", "anthropic/claude-sonnet-4"))
-    execution_agent_search_model: str = Field(default=os.getenv("EXECUTION_AGENT_SEARCH_MODEL", "anthropic/claude-sonnet-4"))
-    summarizer_model: str = Field(default=os.getenv("SUMMARIZER_MODEL", "anthropic/claude-sonnet-4"))
-    email_classifier_model: str = Field(default=os.getenv("EMAIL_CLASSIFIER_MODEL", "anthropic/claude-sonnet-4"))
+    # LLM model selection - single variable for all agents
+    # Set ALYN_MODEL in Railway to change the model for all agents
+    # Example: ALYN_MODEL=openai/gpt-4-turbo
+    _default_model: str = os.getenv("ALYN_MODEL", "anthropic/claude-sonnet-4")
+
+    interaction_agent_model: str = Field(default_factory=lambda: os.getenv("ALYN_MODEL", "anthropic/claude-sonnet-4"))
+    execution_agent_model: str = Field(default_factory=lambda: os.getenv("ALYN_MODEL", "anthropic/claude-sonnet-4"))
+    execution_agent_search_model: str = Field(default_factory=lambda: os.getenv("ALYN_MODEL", "anthropic/claude-sonnet-4"))
+    summarizer_model: str = Field(default_factory=lambda: os.getenv("ALYN_MODEL", "anthropic/claude-sonnet-4"))
+    email_classifier_model: str = Field(default_factory=lambda: os.getenv("ALYN_MODEL", "anthropic/claude-sonnet-4"))
 
     # Credentials / integrations
     openrouter_api_key: Optional[str] = Field(default=os.getenv("OPENROUTER_API_KEY"))
