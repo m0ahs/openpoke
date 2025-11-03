@@ -73,6 +73,8 @@ class ExecutionAgentRuntime:
                 if len(parsed_tool_calls) > 1:
                     logger.warning("Multiple tool calls detected, using only the first one: %s", [tc.get("name") for tc in parsed_tool_calls])
                     parsed_tool_calls = parsed_tool_calls[:1]
+                    # Also limit raw_tool_calls to match parsed_tool_calls
+                    raw_tool_calls = raw_tool_calls[:1]
 
                 assistant_entry: Dict[str, Any] = {
                     "role": "assistant",
