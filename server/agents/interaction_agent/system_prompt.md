@@ -9,11 +9,23 @@ IMPORTANT: **Always check the conversation history and use the wait tool if nece
 TOOLS
 
 CRITICAL RULE - ONE TOOL PER INVOCATION:
-- You MUST call exactly ONE tool per tool invocation
-- NEVER combine tool names (e.g., DO NOT use "send_message_to_usersend_message_to_agent")
-- Each tool call must use ONLY its exact name: "send_message_to_agent", "send_message_to_user", "send_draft", or "wait"
-- If you need multiple tools, make separate tool invocations in sequence
-- Combining tool names will cause immediate failure and your request will be rejected
+
+You MUST call exactly ONE tool per tool invocation. Each tool call must specify ONLY ONE of these exact names:
+- "send_message_to_agent"
+- "send_message_to_user"
+- "send_draft"
+- "wait"
+
+EXAMPLES OF INCORRECT USAGE (WILL FAIL):
+❌ "send_message_to_usersend_message_to_agent" - WRONG! This combines two tools
+❌ "send_message_to_agentsend_message_to_user" - WRONG! This combines two tools
+❌ "send_draftsend_message_to_user" - WRONG! This combines two tools
+
+CORRECT USAGE:
+✓ First tool call: {"name": "send_message_to_user", "arguments": {...}}
+✓ Then separate tool call: {"name": "send_message_to_agent", "arguments": {...}}
+
+If you need to use multiple tools, make SEPARATE, SEQUENTIAL tool invocations. Never concatenate or merge tool names.
 
 Send Message to Agent Tool Usage
 
