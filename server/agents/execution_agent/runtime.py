@@ -65,6 +65,11 @@ class ExecutionAgentRuntime:
                 raw_tool_calls = assistant_message.get("tool_calls", []) or []
                 parsed_tool_calls = self._extract_tool_calls(raw_tool_calls)
 
+                # Limit to single tool call to prevent combination issues
+                if len(parsed_tool_calls) > 1:
+                    logger.warning("Multiple tool calls detected, using only the first one: %s", [tc.get("name") for tc in parsed_tool_calls])
+                    parsed_tool_calls = parsed_tool_calls[:1]
+
                 assistant_entry: Dict[str, Any] = {
                     "role": "assistant",
                     "content": assistant_message.get("content", "") or "",
@@ -172,18 +177,28 @@ class ExecutionAgentRuntime:
             name = function.get("name", "")
             args = function.get("arguments", "")
 
+            # Validate tool name - reject malformed names
+            if not name or not isinstance(name, str):
+                logger.warning("Tool call missing or invalid name: %s", tool)
+                continue
+
+            # Reject concatenated tool names (common LLM hallucination)
+            if any(sep in name for sep in ['_', ' ', '-', '+']) and len(name.split()) > 1:
+                logger.warning("Tool call rejected - concatenated name: %s", name)
+                continue
+
             if isinstance(args, str):
                 try:
                     args = json.loads(args) if args else {}
                 except json.JSONDecodeError:
+                    logger.warning("Tool call has invalid JSON arguments: %s", args)
                     args = {}
 
-            if name:
-                tool_calls.append({
-                    "id": tool.get("id"),
-                    "name": name,
-                    "arguments": args,
-                })
+            tool_calls.append({
+                "id": tool.get("id"),
+                "name": name,
+                "arguments": args,
+            })
 
         return tool_calls
 
@@ -229,12 +244,16 @@ class ExecutionAgentRuntime:
             return False, {"error": f"Unknown tool: {tool_name}"}
 
         try:
+            # Call the function - it might be sync or async
             if asyncio.iscoroutinefunction(tool_func):
                 result = await tool_func(**arguments)
             else:
                 result = tool_func(**arguments)
+
+            # If the result is awaitable (like a coroutine), await it
             if inspect.isawaitable(result):
                 result = await result
+
             return True, result
         except Exception as e:
             logger.error(f"[{self.agent.name}] Tool execution error: {e}", exc_info=True)

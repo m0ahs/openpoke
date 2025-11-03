@@ -86,7 +86,6 @@ def generate_answer_sync(
         result = client.search_and_contents(
             query,
             num_results=min(num_results, _MAX_RESULTS),
-            use_autoprompt=True,
             include_domains=include_domains,
             exclude_domains=exclude_domains,
             text=True,

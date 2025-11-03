@@ -487,8 +487,18 @@ def execute_gmail_tool(
         )
         return _normalize_tool_response(result)
     except Exception as exc:
-        logger.exception(
-            "gmail tool execution failed",
-            extra={"tool": tool_name, "user_id": composio_user_id},
-        )
-        raise RuntimeError(f"{tool_name} invocation failed: {exc}") from exc
+        error_msg = str(exc)
+        # Check for specific Composio connection errors
+        if "No connected account found" in error_msg or "400" in error_msg:
+            logger.warning(
+                "Gmail tool execution failed - no connected account: %s",
+                error_msg,
+                extra={"tool": tool_name, "user_id": composio_user_id},
+            )
+            raise RuntimeError(f"Gmail not connected. Please connect your Gmail account first.") from exc
+        else:
+            logger.exception(
+                "gmail tool execution failed",
+                extra={"tool": tool_name, "user_id": composio_user_id},
+            )
+            raise RuntimeError(f"{tool_name} invocation failed: {exc}") from exc
