@@ -122,7 +122,7 @@ export default function SettingsModal({
   const readStoredUserId = useCallback(() => {
     if (typeof window === 'undefined') return '';
     try {
-      return localStorage.getItem('openpoke_user_id') || '';
+      return localStorage.getItem('alyn_user_id') || '';
     } catch {
       return '';
     }
@@ -133,7 +133,7 @@ export default function SettingsModal({
       return `web-${Math.random().toString(36).slice(2)}`;
     }
     try {
-      const existing = localStorage.getItem('openpoke_user_id');
+      const existing = localStorage.getItem('alyn_user_id');
       if (existing) return existing;
       const cryptoObj = (globalThis as { crypto?: Crypto }).crypto;
       const randomPart =
@@ -141,7 +141,7 @@ export default function SettingsModal({
           ? cryptoObj.randomUUID().replace(/-/g, '')
           : Math.random().toString(36).slice(2);
       const generated = `web-${randomPart}`;
-      localStorage.setItem('openpoke_user_id', generated);
+      localStorage.setItem('alyn_user_id', generated);
       return generated;
     } catch {
       return `web-${Math.random().toString(36).slice(2)}`;
@@ -283,7 +283,7 @@ export default function SettingsModal({
           localStorage.setItem('gmail_connected', 'true');
           if (email) localStorage.setItem('gmail_email', email);
           if (typeof data?.user_id === 'string' && data.user_id) {
-            localStorage.setItem('openpoke_user_id', data.user_id);
+            localStorage.setItem('alyn_user_id', data.user_id);
           }
         } catch {}
       } else {
@@ -308,7 +308,7 @@ export default function SettingsModal({
 
   const handleDisconnectGmail = useCallback(async () => {
     if (typeof window !== 'undefined') {
-      const proceed = window.confirm('Disconnect Gmail from OpenPoke?');
+      const proceed = window.confirm('Disconnect Gmail from Alyn?');
       if (!proceed) return;
     }
 
@@ -339,7 +339,7 @@ export default function SettingsModal({
         localStorage.removeItem('gmail_connected');
         localStorage.removeItem('gmail_email');
         localStorage.removeItem('gmail_connection_request_id');
-        localStorage.removeItem('openpoke_user_id');
+        localStorage.removeItem('alyn_user_id');
       } catch {}
     } catch (e: any) {
       setGmailStatusMessage(e?.message || 'Failed to disconnect Gmail');
@@ -394,7 +394,7 @@ export default function SettingsModal({
                 <div>
                   <div className="text-sm font-semibold text-gray-900">Gmail (via Composio)</div>
                   <p className="mt-1 text-sm text-gray-600">
-                    Connect Gmail to unlock email search, drafting, and automations inside OpenPoke.
+                    Connect Gmail to unlock email search, drafting, and automations inside Alyn.
                   </p>
                 </div>
                 <span

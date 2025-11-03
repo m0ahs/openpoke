@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'OpenPoke Chat',
-  description: 'A beautiful OpenRouter chat powered by Vercel AI SDK',
+  title: 'Alyn Chat',
+  description: 'A human-like AI assistant developed by Alyn Engineering',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
