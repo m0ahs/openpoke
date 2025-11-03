@@ -76,11 +76,13 @@ class TriggerScheduler:
         due_triggers = self._service.get_due_triggers(before=look_ahead)
 
         logger.info(
-            "Polling for due triggers",
+            f"Found {len(due_triggers)} due triggers",
             extra={
                 "now": _isoformat(now),
                 "look_ahead": _isoformat(look_ahead),
-                "due_count": len(due_triggers)
+                "due_count": len(due_triggers),
+                "trigger_ids": [t.id for t in due_triggers],
+                "trigger_times": [t.next_trigger for t in due_triggers if t.next_trigger]
             },
         )
 
