@@ -1,19 +1,24 @@
-"""Integration with the Exa search API."""
+"""Exa search integration via Smithery MCP server."""
 
 from __future__ import annotations
 
+import asyncio
+import json
 from typing import Any, Dict, Iterable, List, Optional
+from urllib.parse import urlencode
 
-import httpx
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
 
 from ...config import get_settings
 from ...logging_config import logger
 
-_EXA_SEARCH_ENDPOINT = "https://api.exa.ai/search"
+_DEFAULT_MAX_RESULTS = 5
+_MAX_RESULTS = 20
 
 
 class ExaSearchError(RuntimeError):
-    """Raised when Exa search cannot be completed."""
+    """Raised when the Exa search backend is unavailable or misconfigured."""
 
 
 def _normalise_domains(domains: Optional[Iterable[str]]) -> Optional[List[str]]:
@@ -23,114 +28,154 @@ def _normalise_domains(domains: Optional[Iterable[str]]) -> Optional[List[str]]:
     return cleaned or None
 
 
-def _extract_snippet(result: Dict[str, Any]) -> str:
-    """Best-effort snippet extraction from Exa search results."""
+async def _fetch_via_mcp(
+    query: str,
+    limit: int,
+    include_domains: Optional[List[str]],
+    exclude_domains: Optional[List[str]],
+) -> Dict[str, Any]:
+    settings = get_settings()
+    api_key = settings.smithery_exa_api_key
+    profile = settings.smithery_exa_profile
+    base_url = settings.smithery_base_url
+    tool_name = settings.smithery_exa_tool_name or "exa_search"
 
-    candidates: List[str] = []
+    if not api_key or not profile:
+        raise ExaSearchError("Smithery credentials missing; set SMITHERY_EXA_API_KEY and SMITHERY_EXA_PROFILE")
+    if not base_url:
+        raise ExaSearchError("Smithery base URL missing; set SMITHERY_BASE_URL")
 
-    highlight = result.get("highlight")
-    if isinstance(highlight, list):
-        candidates.extend(str(item) for item in highlight if item)
-    elif isinstance(highlight, (str, bytes)):
-        candidates.append(highlight.decode("utf-8", errors="ignore") if isinstance(highlight, bytes) else highlight)
-    elif isinstance(highlight, dict):
-        snippet_value = highlight.get("snippet") or highlight.get("text")
-        if isinstance(snippet_value, str):
-            candidates.append(snippet_value)
+    params = urlencode({"api_key": api_key, "profile": profile})
+    separator = "&" if "?" in base_url else "?"
+    target_url = f"{base_url}{separator}{params}"
 
-    text_value = result.get("snippet") or result.get("text") or result.get("content")
-    if isinstance(text_value, str):
-        candidates.append(text_value)
+    arguments: Dict[str, Any] = {
+        "query": query,
+        "numResults": limit,
+    }
+    if include_domains:
+        arguments["includeDomains"] = include_domains
+    if exclude_domains:
+        arguments["excludeDomains"] = exclude_domains
 
-    markdown_value = result.get("markdown")
-    if isinstance(markdown_value, str):
-        candidates.append(markdown_value)
+    async with streamablehttp_client(target_url) as (read, write, _):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            tool_result = await session.call_tool(tool_name, arguments)
 
-    snippet = next((candidate.strip() for candidate in candidates if candidate and candidate.strip()), "")
-    return snippet[:500]
+    payload: Any = tool_result
+    if hasattr(tool_result, "model_dump"):
+        payload = tool_result.model_dump()
+    elif hasattr(tool_result, "dict"):
+        payload = tool_result.dict()
+
+    if isinstance(payload, dict):
+        return payload
+
+    if isinstance(payload, (list, tuple)):
+        texts: List[str] = []
+        for item in payload:
+            if isinstance(item, dict) and "text" in item:
+                texts.append(str(item.get("text", "")))
+            elif isinstance(item, str):
+                texts.append(item)
+        combined = "\n".join(texts).strip()
+        if combined:
+            try:
+                return json.loads(combined)
+            except json.JSONDecodeError:
+                return {"raw": combined}
+
+    if isinstance(payload, str):
+        try:
+            return json.loads(payload)
+        except json.JSONDecodeError:
+            return {"raw": payload}
+
+    return {"raw": repr(payload)}
 
 
-def search_exa(
+async def search_exa_async(
     query: str,
     *,
-    num_results: int = 5,
+    num_results: int = _DEFAULT_MAX_RESULTS,
     include_domains: Optional[Iterable[str]] = None,
     exclude_domains: Optional[Iterable[str]] = None,
 ) -> Dict[str, Any]:
-    """Run a neural web search via Exa and return normalised results.
+    """Execute an Exa search request via Smithery MCP."""
 
-    Parameters
-    ----------
-    query: str
-        Search query text.
-    num_results: int, optional
-        Maximum number of results to return (clamped between 1 and 20).
-    include_domains / exclude_domains: iterable[str], optional
-        Domain filters to pass through to Exa.
-    """
-
-    settings = get_settings()
-    api_key = settings.exa_api_key
-    if not api_key:
-        raise ExaSearchError("EXA_API_KEY is not configured")
-
-    limit = max(1, min(int(num_results or 5), 20))
-    payload: Dict[str, Any] = {
-        "query": query,
-        "type": "neural",
-        "numResults": limit,
-        "includeText": True,
-    }
-
+    limit = max(1, min(int(num_results or _DEFAULT_MAX_RESULTS), _MAX_RESULTS))
     include = _normalise_domains(include_domains)
-    if include:
-        payload["includeDomains"] = include
     exclude = _normalise_domains(exclude_domains)
-    if exclude:
-        payload["excludeDomains"] = exclude
-
-    headers = {
-        "Content-Type": "application/json",
-        "x-api-key": api_key,
-    }
 
     try:
-        with httpx.Client(timeout=httpx.Timeout(15.0, connect=5.0)) as client:
-            response = client.post(_EXA_SEARCH_ENDPOINT, headers=headers, json=payload)
-            response.raise_for_status()
-    except httpx.HTTPStatusError as exc:  # pragma: no cover - network failures
-        body = exc.response.text if exc.response else ""
-        message = f"Exa search failed with status {exc.response.status_code if exc.response else 'unknown'}: {body}"
-        logger.warning(message)
-        raise ExaSearchError(message) from exc
-    except httpx.HTTPError as exc:  # pragma: no cover - network failures
-        message = f"Exa search request error: {exc}".strip()
-        logger.warning(message)
-        raise ExaSearchError(message) from exc
+        raw_payload = await _fetch_via_mcp(query, limit, include, exclude)
+    except Exception as exc:  # pragma: no cover - network/SDK failures
+        logger.warning("Exa search failed: %s", exc)
+        if isinstance(exc, ExaSearchError):
+            raise
+        raise ExaSearchError(str(exc)) from exc
 
-    data = response.json()
-    raw_results = data.get("results")
-    if not isinstance(raw_results, list):
-        logger.debug("Unexpected Exa response payload: %s", data)
-        raw_results = []
+    results = raw_payload.get("results") if isinstance(raw_payload, dict) else None
 
-    normalised_results: List[Dict[str, Any]] = []
-    for item in raw_results:
+    if not isinstance(results, list):
+        return {
+            "query": query,
+            "results": [],
+            "raw": raw_payload,
+        }
+
+    normalised: List[Dict[str, Any]] = []
+    for item in results:
         if not isinstance(item, dict):
             continue
-        normalised_results.append(
+        normalised.append(
             {
                 "title": (item.get("title") or item.get("id") or "Untitled").strip(),
                 "url": item.get("url"),
                 "score": item.get("score"),
-                "snippet": _extract_snippet(item),
+                "snippet": item.get("snippet") or item.get("text"),
                 "published": item.get("publishedDate") or item.get("published"),
             }
         )
 
     return {
         "query": query,
-        "results": normalised_results,
+        "results": normalised,
     }
 
-```},
+
+def search_exa(
+    query: str,
+    *,
+    num_results: int = _DEFAULT_MAX_RESULTS,
+    include_domains: Optional[Iterable[str]] = None,
+    exclude_domains: Optional[Iterable[str]] = None,
+) -> Dict[str, Any]:
+    """Synchronously execute an Exa search via Smithery."""
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        future = asyncio.run_coroutine_threadsafe(
+            search_exa_async(
+                query,
+                num_results=num_results,
+                include_domains=include_domains,
+                exclude_domains=exclude_domains,
+            ),
+            loop,
+        )
+        return future.result()
+
+    return asyncio.run(
+        search_exa_async(
+            query,
+            num_results=num_results,
+            include_domains=include_domains,
+            exclude_domains=exclude_domains,
+        )
+    )
