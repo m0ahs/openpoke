@@ -14,7 +14,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy server code
 COPY server/ ./server/
-COPY .env .env
 
 # Create data directory
 RUN mkdir -p /app/server/data
