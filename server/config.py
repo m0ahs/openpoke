@@ -68,6 +68,9 @@ class Settings(BaseModel):
     composio_exa_mcp_url: Optional[str] = Field(default=os.getenv("COMPOSIO_EXA_MCP_URL"))
     composio_exa_user_id: Optional[str] = Field(default=os.getenv("COMPOSIO_EXA_USER_ID"))
     composio_exa_tool_name: str = Field(default=os.getenv("COMPOSIO_EXA_TOOL_NAME", "search_web"))
+    composio_google_super_user_id: Optional[str] = Field(default=os.getenv("COMPOSIO_GOOGLESUPER_USER_ID"))
+    composio_google_super_connected_account_id: Optional[str] = Field(default=os.getenv("COMPOSIO_GOOGLESUPER_CONNECTED_ACCOUNT_ID"))
+    composio_google_super_toolkit_slug: Optional[str] = Field(default=os.getenv("COMPOSIO_GOOGLESUPER_TOOLKIT_SLUG"))
     exa_api_key: Optional[str] = Field(default=os.getenv("EXA_API_KEY"))
 
     # HTTP behaviour

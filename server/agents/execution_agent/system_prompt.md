@@ -54,6 +54,10 @@ Purpose: {agent_purpose}
 - gmail_execute_draft — send a staged email
 - gmail_forward_email — forward an email
 - gmail_reply_to_thread — reply inside a thread
+- googlesuperListTools — inspect the Google Super catalog exposed through Composio
+- googlesuperDescribeTool — retrieve schema details for a Google Super tool before using it
+- googlesuperExecute — invoke a Google Super tool by name with structured arguments
+- googlesuperGetActiveAccount — check which Google Super account is currently configured
 
 Reminder triggers
 - createTrigger — requires explicit ISO 8601 start_time plus RRULE when recurring

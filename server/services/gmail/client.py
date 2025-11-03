@@ -9,14 +9,15 @@ from typing import Any, Dict, Optional
 from fastapi import status
 from fastapi.responses import JSONResponse
 
-from ...config import Settings, get_settings
+from ...config import Settings
 from ...logging_config import logger
 from ...models import GmailConnectPayload, GmailDisconnectPayload, GmailStatusPayload
 from ...utils import error_response
+from ..composio_client import (
+    get_composio_client as _shared_get_composio_client,
+    normalize_composio_payload,
+)
 
-
-_CLIENT_LOCK = threading.Lock()
-_CLIENT: Optional[Any] = None
 
 _PROFILE_CACHE: Dict[str, Dict[str, Any]] = {}
 _PROFILE_CACHE_LOCK = threading.Lock()
@@ -40,31 +41,8 @@ def get_active_gmail_user_id() -> Optional[str]:
         return _ACTIVE_USER_ID
 
 
-def _gmail_import_client():
-    from composio import Composio  # type: ignore
-    return Composio
-
-
-# Get or create a singleton Composio client instance with thread-safe initialization
 def _get_composio_client(settings: Optional[Settings] = None):
-    global _CLIENT
-    if _CLIENT is not None:
-        return _CLIENT
-
-    with _CLIENT_LOCK:
-        if _CLIENT is None:
-            resolved_settings = settings or get_settings()
-            Composio = _gmail_import_client()
-            api_key = resolved_settings.composio_api_key
-            try:
-                _CLIENT = Composio(api_key=api_key) if api_key else Composio()
-            except TypeError as exc:
-                if api_key:
-                    raise RuntimeError(
-                        "Installed Composio SDK does not accept the api_key argument; upgrade the SDK or remove COMPOSIO_API_KEY."
-                    ) from exc
-                _CLIENT = Composio()
-    return _CLIENT
+    return _shared_get_composio_client(settings)
 
 
 def _extract_email(obj: Any) -> Optional[str]:
@@ -422,46 +400,17 @@ def disconnect_account(payload: GmailDisconnectPayload) -> JSONResponse:
             detail="; ".join(errors),
         )
 
-    payload = {
+    response_payload = {
         "ok": True,
         "disconnected": bool(removed_ids),
         "removed_connection_ids": removed_ids,
     }
     if not removed_ids:
-        payload["message"] = "No Gmail connection found"
+        response_payload["message"] = "No Gmail connection found"
 
     if errors:
-        payload["warnings"] = errors
-    return JSONResponse(payload)
-
-
-def _normalize_tool_response(result: Any) -> Dict[str, Any]:
-    payload_dict: Optional[Dict[str, Any]] = None
-    try:
-        if hasattr(result, "model_dump"):
-            payload_dict = result.model_dump()  # type: ignore[assignment]
-        elif hasattr(result, "dict"):
-            payload_dict = result.dict()  # type: ignore[assignment]
-    except Exception:
-        payload_dict = None
-
-    if payload_dict is None:
-        try:
-            if hasattr(result, "model_dump_json"):
-                payload_dict = json.loads(result.model_dump_json())
-        except Exception:
-            payload_dict = None
-
-    if payload_dict is None:
-        if isinstance(result, dict):
-            payload_dict = result
-        elif isinstance(result, list):
-            payload_dict = {"items": result}
-        else:
-            payload_dict = {"repr": str(result)}
-
-    return payload_dict
-
+        response_payload["warnings"] = errors
+    return JSONResponse(response_payload)
 
 # Execute Gmail operations through Composio SDK with error handling
 def execute_gmail_tool(
@@ -485,7 +434,7 @@ def execute_gmail_tool(
             user_id=composio_user_id,
             arguments=prepared_arguments,
         )
-        return _normalize_tool_response(result)
+        return normalize_composio_payload(result)
     except Exception as exc:
         error_msg = str(exc)
         # Check for specific Composio connection errors
