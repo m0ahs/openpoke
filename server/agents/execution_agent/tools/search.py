@@ -5,6 +5,13 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List, Optional
 
 from server.services.search.exa import ExaSearchError, search_exa
+from server.services.search.composio_exa import (
+    ComposioExaError,
+    generate_answer,
+    find_similar,
+    get_contents,
+    advanced_search,
+)
 from server.services.execution import get_execution_agent_logs
 
 _LOG_STORE = get_execution_agent_logs()
@@ -141,6 +148,87 @@ _SCHEMAS: List[Dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "answer_question",
+            "description": "Generate a direct, citation-backed answer to a question using Exa's AI. This is the most powerful search tool - returns a synthesized answer with citations rather than just search results. Perfect for complex questions requiring synthesis from multiple sources.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "description": "Natural language question or topic to answer.",
+                    },
+                    "num_sources": {
+                        "type": "integer",
+                        "description": "Number of sources to use for answer generation (defaults to 5, capped at 20).",
+                    },
+                    "include_domains": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional list of domains to prioritize for sources.",
+                    },
+                    "exclude_domains": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional list of domains to exclude from sources.",
+                    },
+                },
+                "required": ["question"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "find_similar_content",
+            "description": "Find web pages semantically similar to a given URL using embeddings-based search. Perfect for finding related articles, similar products, or content exploration.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "Reference URL to find similar content for.",
+                    },
+                    "num_results": {
+                        "type": "integer",
+                        "description": "Number of similar pages to return (defaults to 10, capped at 20).",
+                    },
+                    "include_full_content": {
+                        "type": "boolean",
+                        "description": "Whether to include full text content of similar pages.",
+                    },
+                },
+                "required": ["url"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "extract_content",
+            "description": "Retrieve full content from a list of URLs. Perfect for deep analysis, content extraction, or reading full articles.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "urls": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of URLs to fetch content from (max 10 URLs).",
+                    },
+                    "include_highlights": {
+                        "type": "boolean",
+                        "description": "Whether to include highlighted key excerpts.",
+                    },
+                },
+                "required": ["urls"],
+                "additionalProperties": False,
+            },
+        },
+    },
 ]
 
 
@@ -159,6 +247,9 @@ def build_registry(_: str) -> Dict[str, Callable[..., Any]]:
         "research_topic": research_topic,
         "search_company": search_company,
         "search_academic": search_academic,
+        "answer_question": answer_question,
+        "find_similar_content": find_similar_content,
+        "extract_content": extract_content,
     }
 
 
@@ -382,6 +473,166 @@ def search_academic(
         }
 
 
+def answer_question(
+    question: str,
+    num_sources: Optional[int] = None,
+    include_domains: Optional[List[str]] = None,
+    exclude_domains: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """
+    Generate a direct, citation-backed answer using Exa's AI.
+
+    This is the most powerful tool - it returns a synthesized answer with
+    citations rather than just search results.
+
+    Args:
+        question: Natural language question or topic
+        num_sources: Number of sources to use for answer (default 5)
+        include_domains: Optional domains to prioritize
+        exclude_domains: Optional domains to exclude
+
+    Returns:
+        Dict with 'answer' text, 'citations' list, and metadata
+    """
+    try:
+        result = generate_answer(
+            question,
+            num_results=num_sources or 5,
+            include_domains=include_domains,
+            exclude_domains=exclude_domains,
+        )
+        # Extract answer and citations from result
+        answer_text = result.get("answer") or result.get("text") or ""
+        citations = result.get("citations", [])
+
+        _log_search("answer_question", question, success=True, result_count=len(citations))
+        return {
+            "question": question,
+            "answer": answer_text,
+            "citations": citations,
+            "raw_result": result,
+        }
+    except ComposioExaError as exc:
+        error_msg = str(exc)
+        _log_search("answer_question", question, success=False, error=error_msg)
+        return {
+            "question": question,
+            "answer": None,
+            "citations": [],
+            "error": error_msg,
+            "error_type": "composio_unavailable",
+        }
+    except Exception as exc:
+        error_msg = str(exc)
+        _log_search("answer_question", question, success=False, error=error_msg)
+        return {
+            "question": question,
+            "answer": None,
+            "citations": [],
+            "error": f"Unexpected error: {error_msg}",
+            "error_type": "unknown",
+        }
+
+
+def find_similar_content(
+    url: str,
+    num_results: Optional[int] = None,
+    include_full_content: Optional[bool] = None,
+) -> Dict[str, Any]:
+    """
+    Find web pages semantically similar to a given URL.
+
+    Args:
+        url: Reference URL to find similar content for
+        num_results: Number of similar pages to return
+        include_full_content: Whether to include full text
+
+    Returns:
+        Dict with 'results' list of similar pages
+    """
+    try:
+        result = find_similar(
+            url,
+            num_results=num_results or 10,
+            include_text=include_full_content or False,
+        )
+        results = result.get("results", [])
+        _log_search("find_similar_content", url, success=True, result_count=len(results))
+        return {
+            "reference_url": url,
+            "results": results,
+            "total_results": len(results),
+        }
+    except ComposioExaError as exc:
+        error_msg = str(exc)
+        _log_search("find_similar_content", url, success=False, error=error_msg)
+        return {
+            "reference_url": url,
+            "results": [],
+            "error": error_msg,
+            "error_type": "composio_unavailable",
+        }
+    except Exception as exc:
+        error_msg = str(exc)
+        _log_search("find_similar_content", url, success=False, error=error_msg)
+        return {
+            "reference_url": url,
+            "results": [],
+            "error": f"Unexpected error: {error_msg}",
+            "error_type": "unknown",
+        }
+
+
+def extract_content(
+    urls: List[str],
+    include_highlights: Optional[bool] = None,
+) -> Dict[str, Any]:
+    """
+    Retrieve full content from a list of URLs.
+
+    Args:
+        urls: List of URLs to fetch content from (max 10)
+        include_highlights: Whether to include highlighted excerpts
+
+    Returns:
+        Dict with 'contents' list of retrieved content
+    """
+    # Limit to 10 URLs to avoid overwhelming the service
+    limited_urls = urls[:10] if len(urls) > 10 else urls
+
+    try:
+        result = get_contents(
+            limited_urls,
+            include_text=True,
+            include_highlights=include_highlights or False,
+        )
+        contents = result.get("contents", []) or result.get("data", [])
+        _log_search("extract_content", f"{len(limited_urls)} URLs", success=True, result_count=len(contents))
+        return {
+            "urls": limited_urls,
+            "contents": contents,
+            "total_retrieved": len(contents),
+        }
+    except ComposioExaError as exc:
+        error_msg = str(exc)
+        _log_search("extract_content", f"{len(limited_urls)} URLs", success=False, error=error_msg)
+        return {
+            "urls": limited_urls,
+            "contents": [],
+            "error": error_msg,
+            "error_type": "composio_unavailable",
+        }
+    except Exception as exc:
+        error_msg = str(exc)
+        _log_search("extract_content", f"{len(limited_urls)} URLs", success=False, error=error_msg)
+        return {
+            "urls": limited_urls,
+            "contents": [],
+            "error": f"Unexpected error: {error_msg}",
+            "error_type": "unknown",
+        }
+
+
 __all__ = [
     "build_registry",
     "get_schemas",
@@ -390,4 +641,7 @@ __all__ = [
     "research_topic",
     "search_company",
     "search_academic",
+    "answer_question",
+    "find_similar_content",
+    "extract_content",
 ]
