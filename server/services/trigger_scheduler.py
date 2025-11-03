@@ -89,11 +89,14 @@ class TriggerScheduler:
                 "look_ahead": _isoformat(look_ahead),
                 "due_count": len(due_triggers),
                 "total_count": len(all_triggers),
-                "trigger_ids": [t.id for t in due_triggers],
-                "trigger_times": [t.next_trigger for t in due_triggers if t.next_trigger],
-                "all_trigger_ids": [t.id for t in all_triggers],
-                "all_trigger_times": [t.next_trigger for t in all_triggers if t.next_trigger],
-                "all_trigger_statuses": [t.status for t in all_triggers]
+                "trigger_details": [
+                    {
+                        "id": t.id,
+                        "next_trigger": t.next_trigger,
+                        "status": t.status,
+                        "payload": t.payload[:50] + "..." if len(t.payload) > 50 else t.payload
+                    } for t in all_triggers
+                ]
             },
         )
 
