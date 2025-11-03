@@ -191,6 +191,8 @@ export default function SettingsModal({
   const [userName, setUserName] = useState(settings.userName);
   const [birthDate, setBirthDate] = useState(settings.birthDate);
   const [location, setLocation] = useState(settings.location);
+  
+  // Gmail states
   const [connectingGmail, setConnectingGmail] = useState(false);
   const [isRefreshingGmail, setIsRefreshingGmail] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
@@ -199,6 +201,15 @@ export default function SettingsModal({
   const [gmailEmail, setGmailEmail] = useState('');
   const [gmailConnId, setGmailConnId] = useState('');
   const [gmailProfile, setGmailProfile] = useState<Record<string, unknown> | null>(null);
+
+  // Calendar states
+  const [connectingCalendar, setConnectingCalendar] = useState(false);
+  const [isRefreshingCalendar, setIsRefreshingCalendar] = useState(false);
+  const [isDisconnectingCalendar, setIsDisconnectingCalendar] = useState(false);
+  const [calendarStatusMessage, setCalendarStatusMessage] = useState('');
+  const [calendarConnected, setCalendarConnected] = useState(false);
+  const [calendarEmail, setCalendarEmail] = useState('');
+  const [calendarConnId, setCalendarConnId] = useState('');
 
   const readStoredUserId = useCallback(() => {
     if (typeof window === 'undefined') return '';
@@ -241,6 +252,7 @@ export default function SettingsModal({
 
   useEffect(() => {
     try {
+      // Gmail
       const savedConnected = localStorage.getItem('gmail_connected') === 'true';
       const savedConnId = localStorage.getItem('gmail_connection_request_id') || '';
       const savedEmail = localStorage.getItem('gmail_email') || '';
@@ -249,6 +261,15 @@ export default function SettingsModal({
       setGmailEmail(savedEmail);
       if (savedConnected && savedEmail) {
         setGmailStatusMessage(`Connected as ${savedEmail}`);
+      }
+
+      // Calendar
+      const savedCalendarConnected = localStorage.getItem('calendar_connected') === 'true';
+      const savedCalendarEmail = localStorage.getItem('calendar_email') || '';
+      setCalendarConnected(savedCalendarConnected);
+      setCalendarEmail(savedCalendarEmail);
+      if (savedCalendarConnected && savedCalendarEmail) {
+        setCalendarStatusMessage(`Connected as ${savedCalendarEmail}`);
       }
     } catch {}
   }, []);
@@ -442,6 +463,152 @@ export default function SettingsModal({
     }
   }, [readStoredConnectionRequestId, readStoredUserId]);
 
+  // Calendar functions
+  const handleConnectCalendar = useCallback(async () => {
+    try {
+      setConnectingCalendar(true);
+      setCalendarStatusMessage('');
+      const userId = ensureUserId();
+      const resp = await fetch('/api/calendar/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || !data?.ok) {
+        const msg = data?.error || `Failed (${resp.status})`;
+        setCalendarStatusMessage(msg);
+        return;
+      }
+      const url = data?.redirect_url;
+      const connId = data?.connection_request_id || '';
+      if (connId) {
+        setCalendarConnId(connId);
+        try {
+          localStorage.setItem('calendar_connection_request_id', connId);
+        } catch {}
+      }
+      setCalendarConnected(false);
+      setCalendarEmail('');
+      if (url) {
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        const isPWA = window.matchMedia('(display-mode: standalone)').matches;
+        if (isMobile || isPWA) {
+          window.location.href = url;
+        } else {
+          window.open(url, '_blank', 'noopener');
+          setCalendarStatusMessage('Calendar authorization opened in a new tab. Complete it, then press "Refresh status".');
+        }
+      } else {
+        setCalendarStatusMessage('Connection initiated. Refresh status once authorization completes.');
+      }
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Failed to connect Calendar';
+      setCalendarStatusMessage(message);
+    } finally {
+      setConnectingCalendar(false);
+    }
+  }, [ensureUserId]);
+
+  const refreshCalendarStatus = useCallback(async () => {
+    const userId = readStoredUserId();
+    const connectionRequestId = calendarConnId || (typeof window !== 'undefined' ? localStorage.getItem('calendar_connection_request_id') || '' : '');
+    if (!userId && !connectionRequestId) {
+      setCalendarConnected(false);
+      setCalendarEmail('');
+      setCalendarStatusMessage('Connect Calendar to get started.');
+      return;
+    }
+
+    try {
+      setIsRefreshingCalendar(true);
+      setCalendarStatusMessage('Refreshing Calendar status…');
+      const resp = await fetch('/api/calendar/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, connectionRequestId }),
+      });
+      const data = await resp.json().catch(() => ({}));
+
+      if (!resp.ok || !data?.ok) {
+        const message = data?.error || `Failed (${resp.status})`;
+        setCalendarConnected(false);
+        setCalendarEmail('');
+        setCalendarStatusMessage(message);
+        return;
+      }
+
+      const email = typeof data?.email === 'string' ? data.email : '';
+      const connected = Boolean(data?.connected || data?.status === 'active');
+
+      setCalendarConnected(connected);
+      setCalendarEmail(email);
+
+      if (connected) {
+        const message = email ? `Connected as ${email}` : 'Calendar connected.';
+        setCalendarStatusMessage(message);
+        try {
+          localStorage.setItem('calendar_connected', 'true');
+          if (email) localStorage.setItem('calendar_email', email);
+        } catch {}
+      } else {
+        setCalendarStatusMessage('Not connected yet.');
+        try {
+          localStorage.removeItem('calendar_connected');
+          localStorage.removeItem('calendar_email');
+        } catch {}
+      }
+    } catch (e: unknown) {
+      setCalendarConnected(false);
+      setCalendarEmail('');
+      const message = e instanceof Error ? e.message : 'Failed to check Calendar status';
+      setCalendarStatusMessage(message);
+    } finally {
+      setIsRefreshingCalendar(false);
+    }
+  }, [calendarConnId, readStoredUserId]);
+
+  const handleDisconnectCalendar = useCallback(async () => {
+    if (typeof window !== 'undefined') {
+      const proceed = window.confirm('Disconnect Calendar from Alyn?');
+      if (!proceed) return;
+    }
+
+    try {
+      setIsDisconnectingCalendar(true);
+      setCalendarStatusMessage('Disconnecting Calendar…');
+      const userId = readStoredUserId();
+      const connectionRequestId = calendarConnId || (typeof window !== 'undefined' ? localStorage.getItem('calendar_connection_request_id') || '' : '');
+      const resp = await fetch('/api/calendar/disconnect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, connectionRequestId }),
+      });
+      const data = await resp.json().catch(() => ({}));
+
+      if (!resp.ok || !data?.ok) {
+        const message = data?.error || `Failed (${resp.status})`;
+        setCalendarStatusMessage(message);
+        return;
+      }
+
+      setCalendarConnected(false);
+      setCalendarEmail('');
+      setCalendarConnId('');
+      setCalendarStatusMessage('Calendar disconnected.');
+      try {
+        localStorage.removeItem('calendar_connected');
+        localStorage.removeItem('calendar_email');
+        localStorage.removeItem('calendar_connection_request_id');
+      } catch {}
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Failed to disconnect Calendar';
+      setCalendarStatusMessage(message);
+    } finally {
+      setIsDisconnectingCalendar(false);
+    }
+  }, [calendarConnId, readStoredUserId]);
+
   useEffect(() => {
     setTimezone(settings.timezone);
     setUserName(settings.userName);
@@ -452,13 +619,18 @@ export default function SettingsModal({
   useEffect(() => {
     if (!open) return;
     void refreshGmailStatus();
-  }, [open, refreshGmailStatus]);
+    void refreshCalendarStatus();
+  }, [open, refreshGmailStatus, refreshCalendarStatus]);
 
   if (!open) return null;
 
   const connectButtonLabel = connectingGmail ? 'Opening…' : gmailConnected ? 'Reconnect' : 'Connect Gmail';
   const refreshButtonLabel = isRefreshingGmail ? 'Refreshing…' : 'Refresh status';
   const disconnectButtonLabel = isDisconnecting ? 'Disconnecting…' : 'Disconnect';
+
+  const connectCalendarButtonLabel = connectingCalendar ? 'Opening…' : calendarConnected ? 'Reconnect' : 'Connect Calendar';
+  const refreshCalendarButtonLabel = isRefreshingCalendar ? 'Refreshing…' : 'Refresh status';
+  const disconnectCalendarButtonLabel = isDisconnectingCalendar ? 'Disconnecting…' : 'Disconnect';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-3 sm:p-4">
@@ -596,6 +768,77 @@ export default function SettingsModal({
                     aria-busy={isDisconnecting}
                   >
                     {disconnectButtonLabel}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Google Calendar Integration */}
+          <div className="pt-2">
+            <div className="rounded-xl border border-gray-200 bg-white/70 p-4 shadow-sm">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-gray-900">Google Calendar (via Composio)</div>
+                  <p className="mt-1 text-sm text-gray-600">
+                    Connect Calendar to manage events, check availability, and schedule meetings.
+                  </p>
+                </div>
+                <span
+                  className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset ${
+                    calendarConnected
+                      ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+                      : 'bg-amber-50 text-amber-700 ring-amber-200'
+                  }`}
+                >
+                  {calendarConnected ? 'Connected' : 'Not connected'}
+                </span>
+              </div>
+
+              {calendarConnected ? (
+                <div className="mt-4 space-y-3 rounded-lg border border-gray-100 bg-gray-50 p-3">
+                  <div>
+                    <div className="text-[11px] uppercase tracking-wide text-gray-500">Connected account</div>
+                    <div className="mt-1 text-sm font-medium text-gray-900">{calendarEmail || 'Email unavailable'}</div>
+                  </div>
+                  {calendarStatusMessage && (
+                    <p className="text-xs text-gray-500" aria-live="polite">{calendarStatusMessage}</p>
+                  )}
+                </div>
+              ) : (
+                <div className="mt-4 rounded-lg border border-dashed border-gray-200 p-3 text-sm text-gray-500" aria-live="polite">
+                  {calendarStatusMessage || 'Complete the connection to view your Calendar account details here.'}
+                </div>
+              )}
+
+              <div className="mt-4 flex flex-col sm:flex-row sm:flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="btn min-h-[44px] touch-manipulation"
+                  onClick={handleConnectCalendar}
+                  disabled={connectingCalendar || isRefreshingCalendar || isDisconnectingCalendar}
+                  aria-busy={connectingCalendar}
+                >
+                  {connectCalendarButtonLabel}
+                </button>
+                <button
+                  type="button"
+                  className="rounded-md border border-gray-200 px-4 py-2.5 min-h-[44px] text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 touch-manipulation"
+                  onClick={refreshCalendarStatus}
+                  disabled={isRefreshingCalendar || connectingCalendar}
+                  aria-busy={isRefreshingCalendar}
+                >
+                  {refreshCalendarButtonLabel}
+                </button>
+                {calendarConnected && (
+                  <button
+                    type="button"
+                    className="rounded-md border border-transparent bg-red-50 px-4 py-2.5 min-h-[44px] text-sm font-medium text-red-600 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 touch-manipulation"
+                    onClick={handleDisconnectCalendar}
+                    disabled={isDisconnectingCalendar || connectingCalendar}
+                    aria-busy={isDisconnectingCalendar}
+                  >
+                    {disconnectCalendarButtonLabel}
                   </button>
                 )}
               </div>

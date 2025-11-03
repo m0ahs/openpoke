@@ -9,6 +9,13 @@ from .conversation import (
 )
 from .conversation.chat_handler import handle_chat_request
 from .execution import AgentRoster, ExecutionAgentLogStore, get_agent_roster, get_execution_agent_logs
+from .gcalendar import (
+    disconnect_calendar_account,
+    execute_calendar_tool,
+    fetch_calendar_status,
+    get_active_calendar_user_id,
+    initiate_calendar_connect,
+)
 from .googlesuper import (
     describe_google_super_tool,
     execute_google_super_tool,
@@ -43,6 +50,11 @@ __all__ = [
     "ExecutionAgentLogStore",
     "get_agent_roster",
     "get_execution_agent_logs",
+    "disconnect_calendar_account",
+    "execute_calendar_tool",
+    "fetch_calendar_status",
+    "get_active_calendar_user_id",
+    "initiate_calendar_connect",
     "describe_google_super_tool",
     "execute_google_super_tool",
     "GmailSeenStore",

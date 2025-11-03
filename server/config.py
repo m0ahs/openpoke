@@ -64,6 +64,7 @@ class Settings(BaseModel):
     # Credentials / integrations
     openrouter_api_key: Optional[str] = Field(default=os.getenv("OPENROUTER_API_KEY"))
     composio_gmail_auth_config_id: Optional[str] = Field(default=os.getenv("COMPOSIO_GMAIL_AUTH_CONFIG_ID"))
+    composio_calendar_auth_config_id: Optional[str] = Field(default=os.getenv("COMPOSIO_CALENDAR_AUTH_CONFIG_ID"))
     composio_api_key: Optional[str] = Field(default=os.getenv("COMPOSIO_API_KEY"))
     composio_exa_mcp_url: Optional[str] = Field(default=os.getenv("COMPOSIO_EXA_MCP_URL"))
     composio_exa_user_id: Optional[str] = Field(default=os.getenv("COMPOSIO_EXA_USER_ID"))
