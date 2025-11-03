@@ -2,14 +2,15 @@
 
 import inspect
 import json
+import asyncio
 from typing import Dict, Any, List, Optional, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from .agent import ExecutionAgent
-from .tools import get_tool_schemas, get_tool_registry
-from ...config import get_settings
-from ...openrouter_client import request_chat_completion
-from ...logging_config import logger
+from server.agents.execution_agent.agent import ExecutionAgent
+from server.agents.execution_agent.tools import get_tool_schemas, get_tool_registry
+from server.config import get_settings
+from server.openrouter_client import request_chat_completion
+from server.logging_config import logger
 
 
 @dataclass
@@ -19,7 +20,7 @@ class ExecutionResult:
     success: bool
     response: str
     error: Optional[str] = None
-    tools_executed: List[str] = None
+    tools_executed: List[str] = field(default_factory=list)
 
 
 class ExecutionAgentRuntime:
@@ -110,7 +111,7 @@ class ExecutionAgentRuntime:
                     self.agent.record_tool_execution(
                         tool_name,
                         self._safe_json_dump(tool_args),
-                        record_payload
+                        record_payload or ""
                     )
 
                     tool_message = {
@@ -228,9 +229,13 @@ class ExecutionAgentRuntime:
             return False, {"error": f"Unknown tool: {tool_name}"}
 
         try:
-            result = tool_func(**arguments)
+            if asyncio.iscoroutinefunction(tool_func):
+                result = await tool_func(**arguments)
+            else:
+                result = tool_func(**arguments)
             if inspect.isawaitable(result):
                 result = await result
             return True, result
         except Exception as e:
+            logger.error(f"[{self.agent.name}] Tool execution error: {e}", exc_info=True)
             return False, {"error": str(e)}
