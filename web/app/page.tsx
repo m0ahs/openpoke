@@ -223,7 +223,7 @@ export default function Page() {
             onScroll={handleScroll}
           />
 
-          <div className="border-t border-gray-200 p-2 sm:p-3">
+          <div className="border-t border-gray-200 px-2 pt-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] sm:px-3 sm:pt-3 sm:pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
             {error && <ErrorBanner message={error} onDismiss={clearError} />}
 
             <ChatInput
