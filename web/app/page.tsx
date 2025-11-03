@@ -33,6 +33,7 @@ const toBubbles = (payload: any): ChatBubble[] => {
       id: `history-${index}`,
       role: message.role,
       text: formatEscapeCharacters(message.content),
+      timestamp: typeof message.timestamp === 'string' ? message.timestamp : null,
     }));
 };
 
@@ -120,6 +121,7 @@ export default function Page() {
         id: `user-${Date.now()}`,
         role: 'user',
         text: formatEscapeCharacters(trimmed),
+        timestamp: new Date().toISOString(),
       };
       setMessages(prev => {
         const newMessages = [...prev, userMessage];
