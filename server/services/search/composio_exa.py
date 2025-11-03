@@ -52,6 +52,12 @@ def _get_exa_client(settings: Optional[Any] = None):
     return _CLIENT
 
 
+def get_exa_client(settings: Optional[Any] = None):
+    """Public wrapper around the shared Exa client."""
+
+    return _get_exa_client(settings)
+
+
 def generate_answer_sync(
     query: str,
     *,
@@ -368,6 +374,7 @@ def generate_answer(query: str, **kwargs: Any) -> Dict[str, Any]:
 
 __all__ = [
     "ExaError",
+    "get_exa_client",
     "generate_answer",
     "generate_answer_sync",
     "find_similar",
