@@ -145,26 +145,46 @@ def execute_calendar_tool(
         logger.warning("No calendar user_id provided and no active user configured")
         return {"error": "Calendar account not connected"}
     
+    # Prepare arguments, filtering out None values
+    prepared_arguments: Dict[str, Any] = {}
+    if isinstance(arguments, dict):
+        for key, value in arguments.items():
+            if value is not None:
+                prepared_arguments[key] = value
+    
     try:
         client = _get_composio_client(settings)
         
-        request_params = {
-            "action": tool_name,
-            "params": arguments or {},
-            "entity_id": sanitized_user_id,
-        }
-        
         logger.info(f"Executing calendar tool: {tool_name} for user: {sanitized_user_id}")
         
-        response = client.execute_action(**request_params)
-        normalized = normalize_composio_payload(response)
+        # Use client.client.tools.execute() like Gmail does
+        result = client.client.tools.execute(
+            tool_name,
+            user_id=sanitized_user_id,
+            arguments=prepared_arguments,
+        )
+        
+        normalized = normalize_composio_payload(result)
         
         logger.info(f"Calendar tool {tool_name} executed successfully")
         return normalized
         
     except Exception as exc:
-        logger.exception(f"Calendar tool execution failed: {tool_name}", extra={"error": str(exc)})
-        return {"error": f"Failed to execute calendar tool: {str(exc)}"}
+        error_msg = str(exc)
+        # Check for specific Composio connection errors
+        if "No connected account found" in error_msg or "400" in error_msg:
+            logger.warning(
+                "Calendar tool execution failed - no connected account: %s",
+                error_msg,
+                extra={"tool": tool_name, "user_id": sanitized_user_id},
+            )
+            return {"error": "Calendar not connected. Please connect your Calendar account first."}
+        else:
+            logger.exception(
+                f"Calendar tool execution failed: {tool_name}",
+                extra={"tool": tool_name, "user_id": sanitized_user_id, "error": str(exc)}
+            )
+            return {"error": f"Failed to execute calendar tool: {str(exc)}"}
 
 
 def initiate_calendar_connect(
