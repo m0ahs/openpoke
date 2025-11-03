@@ -3,23 +3,50 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 export type Settings = {
   timezone: string;
+  userName: string;
+  birthDate: string;
+  location: string;
 };
 
 export function useSettings() {
-  const [settings, setSettings] = useState<Settings>({ timezone: '' });
+  const [settings, setSettings] = useState<Settings>({
+    timezone: '',
+    userName: '',
+    birthDate: '',
+    location: ''
+  });
 
   useEffect(() => {
     try {
       const timezone = localStorage.getItem('user_timezone') || '';
-      setSettings({ timezone });
+      const userName = localStorage.getItem('user_name') || '';
+      const birthDate = localStorage.getItem('user_birth_date') || '';
+      const location = localStorage.getItem('user_location') || '';
+      setSettings({ timezone, userName, birthDate, location });
     } catch {}
   }, []);
 
-  const persist = useCallback((s: Settings) => {
+  const persist = useCallback(async (s: Settings) => {
     setSettings(s);
     try {
       localStorage.setItem('user_timezone', s.timezone);
-    } catch {}
+      localStorage.setItem('user_name', s.userName);
+      localStorage.setItem('user_birth_date', s.birthDate);
+      localStorage.setItem('user_location', s.location);
+
+      // Save profile to backend
+      await fetch('/api/profile/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userName: s.userName,
+          birthDate: s.birthDate,
+          location: s.location,
+        }),
+      });
+    } catch (error) {
+      console.error('Failed to save profile:', error);
+    }
   }, []);
 
   return { settings, setSettings: persist } as const;
@@ -110,6 +137,9 @@ export default function SettingsModal({
   onSave: (s: Settings) => void;
 }) {
   const [timezone, setTimezone] = useState(settings.timezone);
+  const [userName, setUserName] = useState(settings.userName);
+  const [birthDate, setBirthDate] = useState(settings.birthDate);
+  const [location, setLocation] = useState(settings.location);
   const [connectingGmail, setConnectingGmail] = useState(false);
   const [isRefreshingGmail, setIsRefreshingGmail] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
@@ -350,6 +380,9 @@ export default function SettingsModal({
 
   useEffect(() => {
     setTimezone(settings.timezone);
+    setUserName(settings.userName);
+    setBirthDate(settings.birthDate);
+    setLocation(settings.location);
   }, [settings]);
 
   useEffect(() => {
@@ -373,6 +406,43 @@ export default function SettingsModal({
           </button>
         </div>
         <div className="space-y-4">
+          <div>
+            <div className="mb-2 text-sm font-medium text-gray-700">Profile Information</div>
+            <div className="space-y-3 rounded-xl border border-gray-200 bg-white/70 p-4">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">Your Name</label>
+                <input
+                  className="input"
+                  type="text"
+                  value={userName}
+                  onChange={(e) => setUserName(e.target.value)}
+                  placeholder="e.g. Joseph"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">Date of Birth</label>
+                <input
+                  className="input"
+                  type="date"
+                  value={birthDate}
+                  onChange={(e) => setBirthDate(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">Location</label>
+                <input
+                  className="input"
+                  type="text"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  placeholder="e.g. San Francisco, CA"
+                />
+              </div>
+              <p className="text-xs text-gray-500">
+                This information helps Alyn provide more personalized assistance.
+              </p>
+            </div>
+          </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">Timezone</label>
             <input
@@ -474,7 +544,7 @@ export default function SettingsModal({
           <button
             className="btn"
             onClick={() => {
-              onSave({ timezone });
+              onSave({ timezone, userName, birthDate, location });
               onClose();
             }}
           >

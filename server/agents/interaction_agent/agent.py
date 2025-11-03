@@ -5,14 +5,30 @@ from pathlib import Path
 from typing import Dict, List
 
 from ...services.execution import get_agent_roster
+from ...services.user_profile import get_user_profile
 
 _prompt_path = Path(__file__).parent / "system_prompt.md"
 SYSTEM_PROMPT = _prompt_path.read_text(encoding="utf-8").strip()
 
 
-# Load and return the pre-defined system prompt from markdown file
+# Load and return the pre-defined system prompt from markdown file with user profile
 def build_system_prompt() -> str:
-    """Return the static system prompt for the interaction agent."""
+    """Return the system prompt for the interaction agent with user profile information."""
+    profile_store = get_user_profile()
+    profile = profile_store.load()
+
+    user_context = []
+    if profile.get("userName"):
+        user_context.append(f"- User's name: {profile['userName']}")
+    if profile.get("birthDate"):
+        user_context.append(f"- User's date of birth: {profile['birthDate']}")
+    if profile.get("location"):
+        user_context.append(f"- User's location: {profile['location']}")
+
+    if user_context:
+        profile_section = "\n\n# USER PROFILE\n\nYou have access to the following information about the user:\n\n" + "\n".join(user_context) + "\n\nUse this information to personalize your responses when relevant. Remember these details naturally without explicitly mentioning you have this information unless necessary."
+        return SYSTEM_PROMPT + profile_section
+
     return SYSTEM_PROMPT
 
 
