@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Dict, Iterable, List, Optional
 
 from ...logging_config import logger
@@ -48,60 +49,74 @@ def search_exa(
 ) -> Dict[str, Any]:
     """Execute an Exa search request using the native SDK."""
 
-    limit = max(1, min(int(num_results or _DEFAULT_MAX_RESULTS), _MAX_RESULTS))
-    include = _normalise_domains(include_domains)
-    exclude = _normalise_domains(exclude_domains)
+    async def do_search():
+        limit = max(1, min(int(num_results or _DEFAULT_MAX_RESULTS), _MAX_RESULTS))
+        include = _normalise_domains(include_domains)
+        exclude = _normalise_domains(exclude_domains)
 
-    try:
-        client = get_exa_client()
-    except ExaError as exc:
-        logger.warning("Exa search unavailable: %s", exc)
-        raise ExaSearchError(str(exc)) from exc
+        try:
+            client = get_exa_client()
+        except ExaError as exc:
+            logger.warning("Exa search unavailable: %s", exc)
+            raise ExaSearchError(str(exc)) from exc
 
-    kwargs: Dict[str, Any] = {
-        "num_results": limit,
-        "use_autoprompt": True,
-    }
-    if include:
-        kwargs["include_domains"] = include
-    if exclude:
-        kwargs["exclude_domains"] = exclude
+        kwargs: Dict[str, Any] = {
+            "num_results": limit,
+            "use_autoprompt": True,
+        }
+        if include:
+            kwargs["include_domains"] = include
+        if exclude:
+            kwargs["exclude_domains"] = exclude
 
-    try:
-        response = client.search(query, **kwargs)
-    except Exception as exc:
-        logger.warning("Exa search request failed: %s", exc)
-        raise ExaSearchError(str(exc)) from exc
+        try:
+            # Run the synchronous SDK call in a separate thread
+            response = await asyncio.to_thread(client.search, query, **kwargs)
+        except Exception as exc:
+            logger.warning("Exa search request failed: %s", exc)
+            raise ExaSearchError(str(exc)) from exc
 
-    raw_results = getattr(response, "results", None)
-    if not isinstance(raw_results, list):
-        logger.info("Exa search returned no structured results for query='%s'", query)
+        raw_results = getattr(response, "results", None)
+        if not isinstance(raw_results, list):
+            logger.info("Exa search returned no structured results for query='%s'", query)
+            return {
+                "query": query,
+                "results": [],
+                "raw": repr(response),
+            }
+
+        normalised: List[Dict[str, Any]] = []
+        for item in raw_results:
+            if item is None:
+                continue
+
+            title = getattr(item, "title", None) or getattr(item, "id", None) or "Untitled"
+            normalised.append(
+                {
+                    "title": title,
+                    "url": getattr(item, "url", None),
+                    "score": getattr(item, "score", None),
+                    "snippet": _extract_snippet(item),
+                    "published": getattr(item, "published_date", None) or getattr(item, "published", None),
+                }
+            )
+
         return {
             "query": query,
-            "results": [],
-            "raw": repr(response),
+            "results": normalised,
         }
 
-    normalised: List[Dict[str, Any]] = []
-    for item in raw_results:
-        if item is None:
-            continue
+    # Run the async wrapper and return the result
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
 
-        title = getattr(item, "title", None) or getattr(item, "id", None) or "Untitled"
-        normalised.append(
-            {
-                "title": title,
-                "url": getattr(item, "url", None),
-                "score": getattr(item, "score", None),
-                "snippet": _extract_snippet(item),
-                "published": getattr(item, "published_date", None) or getattr(item, "published", None),
-            }
-        )
+    if loop and loop.is_running():
+        future = asyncio.run_coroutine_threadsafe(do_search(), loop)
+        return future.result()
 
-    return {
-        "query": query,
-        "results": normalised,
-    }
+    return asyncio.run(do_search())
 
 
 __all__ = [
