@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Callable, Dict, List, Optional
 
 from server.services.search.exa import ExaSearchError, search_exa
@@ -16,6 +17,45 @@ from server.services.execution import get_execution_agent_logs
 
 _LOG_STORE = get_execution_agent_logs()
 _SEARCH_AGENT_NAME = "search-execution-agent"
+
+_MAX_SUB_QUERY_SEGMENTS = 3
+_QUESTION_SPLIT_THRESHOLD = 180
+
+
+def _split_complex_question(question: str) -> List[str]:
+    """Break large multi-part questions into smaller sub-queries."""
+
+    normalized = " ".join(question.strip().split())
+    if not normalized:
+        return []
+
+    if len(normalized) <= _QUESTION_SPLIT_THRESHOLD:
+        return [normalized]
+
+    segments: List[str] = []
+    parts = [segment.strip(" ,;:") for segment in re.split(r"[\?\.!;]+", normalized) if segment.strip()]
+
+    if not parts:
+        return [normalized]
+
+    current = ""
+    for part in parts:
+        candidate = f"{current} {part}".strip() if current else part
+        if current and len(candidate) > _QUESTION_SPLIT_THRESHOLD and len(segments) < _MAX_SUB_QUERY_SEGMENTS - 1:
+            segments.append(current)
+            current = part
+        else:
+            current = candidate
+
+    if current:
+        segments.append(current)
+
+    # Fallback to the original question if splitting failed
+    if not segments:
+        return [normalized]
+
+    return segments[:_MAX_SUB_QUERY_SEGMENTS]
+
 
 _SCHEMAS: List[Dict[str, Any]] = [
     {
@@ -479,39 +519,73 @@ def answer_question(
     include_domains: Optional[List[str]] = None,
     exclude_domains: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    """
-    Generate a direct, citation-backed answer using Exa's AI.
+    """Generate a direct, citation-backed answer using Exa's AI with optional segmentation."""
 
-    This is the most powerful tool - it returns a synthesized answer with
-    citations rather than just search results.
+    segmented_queries = _split_complex_question(question)
+    if not segmented_queries:
+        segmented_queries = [question]
 
-    Args:
-        question: Natural language question or topic
-        num_sources: Number of sources to use for answer (default 5)
-        include_domains: Optional domains to prioritize
-        exclude_domains: Optional domains to exclude
+    per_query_sources = max(1, (num_sources or 5) // len(segmented_queries))
+    combined_answers: List[str] = []
+    combined_citations: List[Dict[str, Any]] = []
+    partial_results: List[Dict[str, Any]] = []
+    errors: List[str] = []
 
-    Returns:
-        Dict with 'answer' text, 'citations' list, and metadata
-    """
     try:
-        result = generate_answer(
-            question,
-            num_results=num_sources or 5,
-            include_domains=include_domains,
-            exclude_domains=exclude_domains,
-        )
-        # Extract answer and citations from result
-        answer_text = result.get("answer") or result.get("text") or ""
-        citations = result.get("citations", [])
+        for index, sub_query in enumerate(segmented_queries, start=1):
+            result = generate_answer(
+                sub_query,
+                num_results=per_query_sources,
+                include_domains=include_domains,
+                exclude_domains=exclude_domains,
+            )
 
-        _log_search("answer_question", question, success=True, result_count=len(citations))
-        return {
+            answer_text = result.get("answer") or result.get("text") or ""
+            citations = result.get("citations", [])
+            error_msg = result.get("error")
+
+            if answer_text:
+                combined_answers.append(f"Section {index}: {answer_text.strip()}")
+
+            if citations:
+                combined_citations.extend(citations)
+
+            if error_msg:
+                errors.append(str(error_msg))
+
+            partial_results.append({
+                "question": sub_query,
+                "answer": answer_text or None,
+                "citations": citations,
+                "error": error_msg,
+                "raw_result": result,
+            })
+
+        success = any(part.get("answer") for part in partial_results)
+        total_citations = sum(len(part.get("citations", [])) for part in partial_results)
+
+        if success:
+            _log_search("answer_question", question, success=True, result_count=total_citations)
+        else:
+            _log_search("answer_question", question, success=False, error="No successful sub-query")
+
+        response: Dict[str, Any] = {
             "question": question,
-            "answer": answer_text,
-            "citations": citations,
-            "raw_result": result,
+            "answer": "\n\n".join(combined_answers) if combined_answers else None,
+            "citations": combined_citations,
+            "sub_queries": segmented_queries,
+            "partial_answers": partial_results,
         }
+
+        if errors and not success:
+            response["error"] = errors[-1]
+            response["error_type"] = "composio_unavailable"
+
+        if errors and success:
+            response["warnings"] = errors
+
+        return response
+
     except ExaError as exc:
         error_msg = str(exc)
         _log_search("answer_question", question, success=False, error=error_msg)
@@ -521,6 +595,8 @@ def answer_question(
             "citations": [],
             "error": error_msg,
             "error_type": "composio_unavailable",
+            "sub_queries": segmented_queries,
+            "partial_answers": [],
         }
     except Exception as exc:
         error_msg = str(exc)
@@ -531,6 +607,8 @@ def answer_question(
             "citations": [],
             "error": f"Unexpected error: {error_msg}",
             "error_type": "unknown",
+            "sub_queries": segmented_queries,
+            "partial_answers": [],
         }
 
 

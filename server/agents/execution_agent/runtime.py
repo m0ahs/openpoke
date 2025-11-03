@@ -26,7 +26,8 @@ class ExecutionResult:
 class ExecutionAgentRuntime:
     """Manages the execution of a single agent request."""
 
-    MAX_TOOL_ITERATIONS = 8
+    MAX_TOOL_ITERATIONS = 5
+    _REPEATED_PLAN_THRESHOLD = 2
 
     # Initialize execution agent runtime with settings, tools, and agent instance
     def __init__(self, agent_name: str):
@@ -51,6 +52,9 @@ class ExecutionAgentRuntime:
             messages = [{"role": "user", "content": instructions}]
             tools_executed: List[str] = []
             final_response: Optional[str] = None
+            plan_signatures: Dict[str, int] = {}
+            executed_tool_signatures: set[str] = set()
+            stop_requested = False
 
             for iteration in range(self.MAX_TOOL_ITERATIONS):
                 logger.info(
@@ -78,8 +82,31 @@ class ExecutionAgentRuntime:
                     assistant_entry["tool_calls"] = raw_tool_calls
                 messages.append(assistant_entry)
 
+                plan_signature = self._safe_json_dump({
+                    "content": assistant_entry["content"].strip(),
+                    "tools": [
+                        {
+                            "name": call.get("name"),
+                            "arguments": call.get("arguments"),
+                        }
+                        for call in parsed_tool_calls
+                    ],
+                })
+
+                if plan_signature:
+                    plan_signatures[plan_signature] = plan_signatures.get(plan_signature, 0) + 1
+                    if plan_signatures[plan_signature] >= self._REPEATED_PLAN_THRESHOLD:
+                        logger.info(
+                            f"[{self.agent.name}] Repeated plan detected; terminating early after {iteration + 1} iterations"
+                        )
+                        final_response = assistant_entry["content"] or "Plan repeated; no further action taken."
+                        stop_requested = True
+
                 if not parsed_tool_calls:
                     final_response = assistant_entry["content"] or "No action required."
+                    stop_requested = True
+
+                if stop_requested:
                     break
 
                 for tool_call in parsed_tool_calls:
@@ -100,6 +127,20 @@ class ExecutionAgentRuntime:
                         messages.append(tool_message)
                         continue
 
+                    tool_signature = self._safe_json_dump({
+                        "name": tool_name,
+                        "arguments": tool_args,
+                    })
+
+                    if tool_signature in executed_tool_signatures:
+                        logger.info(
+                            f"[{self.agent.name}] Identical tool invocation detected; ending execution early"
+                        )
+                        final_response = assistant_entry["content"] or "Repeated tool invocation; stopping."
+                        stop_requested = True
+                        break
+
+                    executed_tool_signatures.add(tool_signature)
                     tools_executed.append(tool_name)
                     logger.info(f"[{self.agent.name}] Executing tool: {tool_name}")
 
@@ -125,6 +166,9 @@ class ExecutionAgentRuntime:
                         "content": self._format_tool_result(tool_name, success, result, tool_args),
                     }
                     messages.append(tool_message)
+
+                if stop_requested:
+                    break
 
             else:
                 raise RuntimeError("Reached tool iteration limit without final response")
