@@ -75,14 +75,25 @@ class TriggerScheduler:
         look_ahead = now + timedelta(seconds=30)
         due_triggers = self._service.get_due_triggers(before=look_ahead)
 
+        # Debug: Log all triggers for the Rappels personnels agent
+        all_triggers = []
+        try:
+            all_triggers = self._service.list_triggers(agent_name="Rappels personnels")
+        except Exception as e:
+            logger.warning(f"Could not list triggers: {e}")
+
         logger.info(
-            f"Found {len(due_triggers)} due triggers",
+            f"Found {len(due_triggers)} due triggers, {len(all_triggers)} total triggers for Rappels personnels",
             extra={
                 "now": _isoformat(now),
                 "look_ahead": _isoformat(look_ahead),
                 "due_count": len(due_triggers),
+                "total_count": len(all_triggers),
                 "trigger_ids": [t.id for t in due_triggers],
-                "trigger_times": [t.next_trigger for t in due_triggers if t.next_trigger]
+                "trigger_times": [t.next_trigger for t in due_triggers if t.next_trigger],
+                "all_trigger_ids": [t.id for t in all_triggers],
+                "all_trigger_times": [t.next_trigger for t in all_triggers if t.next_trigger],
+                "all_trigger_statuses": [t.status for t in all_triggers]
             },
         )
 
