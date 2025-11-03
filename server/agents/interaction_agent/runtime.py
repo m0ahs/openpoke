@@ -247,14 +247,18 @@ class InteractionAgentRuntime:
                     "Tool call combined multiple tools",
                     extra={"tool": name, "components": concatenated},
                 )
+                # Use a valid tool name in the error so the LLM understands
+                # Use the first detected tool name instead of the invalid concatenated name
                 parsed.append(
                     _ToolCall(
                         identifier=raw.get("id"),
-                        name=name,
+                        name=concatenated[0],  # Use first valid tool name
                         arguments={
                             "__invalid_arguments__": (
-                                "Each tool call must target exactly one tool. "
-                                f"Detected tools: {', '.join(concatenated)}"
+                                f"CRITICAL ERROR: You attempted to call multiple tools in a single invocation. "
+                                f"The tool name '{name}' is invalid because it combines these tools: {', '.join(concatenated)}. "
+                                f"You MUST call each tool separately in its own tool invocation. "
+                                f"Make separate calls for: {' and '.join(concatenated)}."
                             )
                         },
                     )

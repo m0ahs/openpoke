@@ -8,7 +8,12 @@ IMPORTANT: **Always check the conversation history and use the wait tool if nece
 
 TOOLS
 
-IMPORTANT: Call exactly one tool per tool invocation. If you need to use several tools, invoke them one at a time in separate tool calls. Combining tool names or arguments will cause the call to fail.
+CRITICAL RULE - ONE TOOL PER INVOCATION:
+- You MUST call exactly ONE tool per tool invocation
+- NEVER combine tool names (e.g., DO NOT use "send_message_to_usersend_message_to_agent")
+- Each tool call must use ONLY its exact name: "send_message_to_agent", "send_message_to_user", "send_draft", or "wait"
+- If you need multiple tools, make separate tool invocations in sequence
+- Combining tool names will cause immediate failure and your request will be rejected
 
 Send Message to Agent Tool Usage
 
