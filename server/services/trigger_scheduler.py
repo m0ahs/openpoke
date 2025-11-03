@@ -10,7 +10,7 @@ from ..agents.execution_agent.batch_manager import ExecutionBatchManager
 from ..agents.execution_agent.runtime import ExecutionResult
 from ..logging_config import logger
 from .triggers import TriggerRecord, get_trigger_service
-from .triggers.utils import parse_iso
+from .triggers.utils import parse_iso, to_storage_timestamp
 
 
 UTC = timezone.utc
@@ -74,6 +74,10 @@ class TriggerScheduler:
         # Look for triggers due in the next 30 seconds to account for polling interval
         look_ahead = now + timedelta(seconds=30)
         due_triggers = self._service.get_due_triggers(before=look_ahead)
+
+        # Debug: Log the before timestamp
+        before_iso = to_storage_timestamp(look_ahead)
+        logger.info(f"Looking for triggers due before: {before_iso}")
 
         # Debug: Log all triggers for the Rappels personnels agent
         all_triggers = []
