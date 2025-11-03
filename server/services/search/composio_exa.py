@@ -312,7 +312,6 @@ def advanced_search(
 
         kwargs: Dict[str, Any] = {
             "num_results": min(num_results, _MAX_RESULTS),
-            "use_autoprompt": True,
         }
 
         if include_domains:

@@ -62,7 +62,6 @@ async def search_exa(
 
     kwargs: Dict[str, Any] = {
         "num_results": limit,
-        "use_autoprompt": True,
     }
     if include:
         kwargs["include_domains"] = include
