@@ -17,7 +17,7 @@ if TYPE_CHECKING:  # pragma: no cover - used for type checkers only
 
 
 _DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
-_CONVERSATION_LOG_PATH = _DATA_DIR / "conversation" / "poke_conversation.log"
+_CONVERSATION_LOG_PATH = _DATA_DIR / "conversation" / "alyn_conversation.log"
 
 
 class TranscriptFormatter(Protocol):
@@ -142,8 +142,8 @@ class ConversationLog:
         self._working_memory_log.append_entry("agent_message", content, timestamp)
 
     def record_reply(self, content: str) -> None:
-        timestamp = self._append("poke_reply", content)
-        self._working_memory_log.append_entry("poke_reply", content, timestamp)
+        timestamp = self._append("alyn_reply", content)
+        self._working_memory_log.append_entry("alyn_reply", content, timestamp)
 
     def record_wait(self, reason: str) -> None:
         """Record a wait marker that should not reach the user-facing chat history."""
@@ -180,7 +180,7 @@ class ConversationLog:
                 messages.append(
                     ChatMessage(role="user", content=payload, timestamp=normalized_timestamp)
                 )
-            elif tag == "poke_reply":
+            elif tag == "alyn_reply":
                 messages.append(
                     ChatMessage(
                         role="assistant", content=payload, timestamp=normalized_timestamp
