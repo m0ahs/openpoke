@@ -51,7 +51,7 @@ interface ChatMessagesProps {
 
 export function ChatMessages({ messages, isWaitingForResponse, scrollContainerRef, onScroll }: ChatMessagesProps) {
   return (
-    <div ref={scrollContainerRef} onScroll={onScroll} className="flex flex-1 flex-col gap-3 overflow-y-auto p-2 sm:gap-2 sm:p-3 sm:px-4">
+    <div ref={scrollContainerRef} onScroll={onScroll} className="flex flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto p-2 sm:gap-2 sm:p-3 sm:px-4">
       {messages.length === 0 && <EmptyState />}
 
       {messages.map((message, index) => {
@@ -71,7 +71,7 @@ export function ChatMessages({ messages, isWaitingForResponse, scrollContainerRe
                   isDraft && 'whitespace-pre-wrap',
                 )}
               >
-                <span className={isDraft ? 'block whitespace-pre-wrap' : 'whitespace-pre-wrap'}>{message.text}</span>
+                <span className={isDraft ? 'block break-words whitespace-pre-wrap' : 'break-words whitespace-pre-wrap'}>{message.text}</span>
               </div>
               {formattedTimestamp && (
                 <span className={clsx('mt-1 text-xs text-gray-400', isUser ? 'text-right' : 'text-left', 'px-1 sm:px-0')}>
