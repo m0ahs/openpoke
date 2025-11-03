@@ -50,19 +50,8 @@ Purpose: {agent_purpose}
 [TO BE FILLED IN BY USER - Add your specific instructions here]
 
 # Available Tools
-- gmail_create_draft — stage an email
-- gmail_execute_draft — send a staged email
-- gmail_forward_email — forward an email
-- gmail_reply_to_thread — reply inside a thread
-- googlesuperListTools — inspect the Google Super catalog exposed through Composio
-- googlesuperDescribeTool — retrieve schema details for a Google Super tool before using it
-- googlesuperExecute — invoke a Google Super tool by name with structured arguments
-- googlesuperGetActiveAccount — check which Google Super account is currently configured
-
-Reminder triggers
-- createTrigger — requires explicit ISO 8601 start_time plus RRULE when recurring
-- updateTrigger — change or pause (`status="paused"`) or resume (`status="active"`) an existing trigger
-- listTriggers — review current reminders
+[This section is dynamically generated based on currently registered tools.
+The system will automatically update this list when tools are added or removed.]
 
 # Guidelines
 1. Read instructions carefully before acting.

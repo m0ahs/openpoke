@@ -5,6 +5,7 @@ from typing import List, Optional, Dict, Any
 
 from ...services.execution import get_execution_agent_logs
 from ...logging_config import logger
+from .tools import get_tool_schemas
 
 
 # Load system prompt template from file
@@ -49,15 +50,88 @@ class ExecutionAgent:
         self.conversation_limit = conversation_limit
         self._log_store = get_execution_agent_logs()
 
+    def _generate_available_tools_section(self) -> str:
+        """
+        Dynamically generate the Available Tools section based on registered tools.
+        
+        Returns:
+            Formatted markdown section listing all available tools with descriptions.
+        """
+        tool_schemas = get_tool_schemas()
+        
+        # Group tools by category
+        gmail_tools = []
+        google_super_tools = []
+        search_tools = []
+        trigger_tools = []
+        task_tools = []
+        
+        for schema in tool_schemas:
+            func = schema.get("function", {})
+            name = func.get("name", "")
+            description = func.get("description", "")
+            
+            if name.startswith("gmail_"):
+                gmail_tools.append(f"- {name} — {description}")
+            elif name.startswith("googlesuper"):
+                google_super_tools.append(f"- {name} — {description}")
+            elif name.startswith("search_") or name == "research_topic":
+                search_tools.append(f"- {name} — {description}")
+            elif name.endswith("Trigger") or "trigger" in name.lower():
+                trigger_tools.append(f"- {name} — {description}")
+            else:
+                task_tools.append(f"- {name} — {description}")
+        
+        sections = []
+        
+        if gmail_tools:
+            sections.append("**Gmail Tools**\n" + "\n".join(gmail_tools))
+        
+        if google_super_tools:
+            sections.append("**Google Super Tools (via Composio)**\n" + "\n".join(google_super_tools))
+        
+        if search_tools:
+            sections.append("**Search Tools**\n" + "\n".join(search_tools))
+        
+        if trigger_tools:
+            sections.append("**Reminder & Trigger Tools**\n" + "\n".join(trigger_tools))
+        
+        if task_tools:
+            sections.append("**Advanced Task Tools**\n" + "\n".join(task_tools))
+        
+        return "# Available Tools\n\n" + "\n\n".join(sections)
+
     # Generate system prompt template with agent name and purpose derived from name
     def build_system_prompt(self) -> str:
         """Build the system prompt for this agent."""
         agent_purpose = f"Handle tasks related to: {self.name}"
-
-        return SYSTEM_PROMPT_TEMPLATE.format(
+        
+        # Generate dynamic tools section
+        tools_section = self._generate_available_tools_section()
+        
+        # Load base prompt and replace the Available Tools section
+        base_prompt = SYSTEM_PROMPT_TEMPLATE.format(
             agent_name=self.name,
             agent_purpose=agent_purpose
         )
+        
+        # Replace the static Available Tools section with dynamic one
+        if "# Available Tools" in base_prompt:
+            # Find the start and end of the Available Tools section
+            start_marker = "# Available Tools"
+            end_marker = "# Guidelines"
+            
+            start_idx = base_prompt.find(start_marker)
+            end_idx = base_prompt.find(end_marker)
+            
+            if start_idx != -1 and end_idx != -1:
+                base_prompt = (
+                    base_prompt[:start_idx] +
+                    tools_section + "\n\n" +
+                    base_prompt[end_idx:]
+                )
+
+        return base_prompt
 
     # Combine base system prompt with conversation history, applying conversation limits
     def build_system_prompt_with_history(self) -> str:
