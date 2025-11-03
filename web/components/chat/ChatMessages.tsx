@@ -12,7 +12,7 @@ interface ChatMessagesProps {
 
 export function ChatMessages({ messages, isWaitingForResponse, scrollContainerRef, onScroll }: ChatMessagesProps) {
   return (
-    <div ref={scrollContainerRef} onScroll={onScroll} className="flex h-[70vh] flex-col gap-2 overflow-y-auto p-4">
+    <div ref={scrollContainerRef} onScroll={onScroll} className="flex flex-1 flex-col gap-2 overflow-y-auto p-3 sm:p-4">
       {messages.length === 0 && <EmptyState />}
 
       {messages.map((message, index) => {
