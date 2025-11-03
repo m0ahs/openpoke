@@ -397,22 +397,22 @@ export default function SettingsModal({
   const disconnectButtonLabel = isDisconnecting ? 'Disconnecting…' : 'Disconnect';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-      <div className="card w-full max-w-lg p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-3 sm:p-4">
+      <div className="card w-full max-w-lg max-h-[95vh] overflow-y-auto p-4 sm:p-6">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Settings</h2>
-          <button onClick={onClose} className="rounded-md p-2 hover:bg-gray-100" aria-label="Close settings">
+          <h2 className="text-lg sm:text-xl font-semibold">Settings</h2>
+          <button onClick={onClose} className="rounded-md p-2 hover:bg-gray-100 touch-manipulation" aria-label="Close settings">
             ✕
           </button>
         </div>
-        <div className="space-y-4">
+        <div className="space-y-5">
           <div>
-            <div className="mb-2 text-sm font-medium text-gray-700">Profile Information</div>
-            <div className="space-y-3 rounded-xl border border-gray-200 bg-white/70 p-4">
+            <div className="mb-3 text-sm font-medium text-gray-700">Profile Information</div>
+            <div className="space-y-4 rounded-xl border border-gray-200 bg-white/70 p-4">
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">Your Name</label>
+                <label className="mb-2 block text-sm font-medium text-gray-700">Your Name</label>
                 <input
-                  className="input"
+                  className="input text-base min-h-[44px]"
                   type="text"
                   value={userName}
                   onChange={(e) => setUserName(e.target.value)}
@@ -420,18 +420,18 @@ export default function SettingsModal({
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">Date of Birth</label>
+                <label className="mb-2 block text-sm font-medium text-gray-700">Date of Birth</label>
                 <input
-                  className="input"
+                  className="input text-base min-h-[44px]"
                   type="date"
                   value={birthDate}
                   onChange={(e) => setBirthDate(e.target.value)}
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">Location</label>
+                <label className="mb-2 block text-sm font-medium text-gray-700">Location</label>
                 <input
-                  className="input"
+                  className="input text-base min-h-[44px]"
                   type="text"
                   value={location}
                   onChange={(e) => setLocation(e.target.value)}
@@ -444,16 +444,16 @@ export default function SettingsModal({
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">Timezone</label>
+            <label className="mb-2 block text-sm font-medium text-gray-700">Timezone</label>
             <input
-              className="input"
+              className="input text-base min-h-[44px]"
               type="text"
               value={timezone}
               onChange={(e) => setTimezone(e.target.value)}
               placeholder="e.g. America/New_York, Europe/London"
               readOnly={!timezone}
             />
-            <p className="mt-1 text-xs text-gray-500">
+            <p className="mt-2 text-xs text-gray-500">
               {timezone ? 'Auto-detected from browser. Edit to override.' : 'Will be auto-detected on next page load.'}
             </p>
           </div>
@@ -504,10 +504,10 @@ export default function SettingsModal({
                 </div>
               )}
 
-              <div className="mt-4 flex flex-wrap gap-2">
+              <div className="mt-4 flex flex-col sm:flex-row sm:flex-wrap gap-2">
                 <button
                   type="button"
-                  className="btn"
+                  className="btn min-h-[44px] touch-manipulation"
                   onClick={handleConnectGmail}
                   disabled={connectingGmail || isRefreshingGmail || isDisconnecting}
                   aria-busy={connectingGmail}
@@ -516,7 +516,7 @@ export default function SettingsModal({
                 </button>
                 <button
                   type="button"
-                  className="rounded-md border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="rounded-md border border-gray-200 px-4 py-2.5 min-h-[44px] text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 touch-manipulation"
                   onClick={refreshGmailStatus}
                   disabled={isRefreshingGmail || connectingGmail}
                   aria-busy={isRefreshingGmail}
@@ -526,7 +526,7 @@ export default function SettingsModal({
                 {gmailConnected && (
                   <button
                     type="button"
-                    className="rounded-md border border-transparent bg-red-50 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="rounded-md border border-transparent bg-red-50 px-4 py-2.5 min-h-[44px] text-sm font-medium text-red-600 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 touch-manipulation"
                     onClick={handleDisconnectGmail}
                     disabled={isDisconnecting || connectingGmail}
                     aria-busy={isDisconnecting}
@@ -539,10 +539,15 @@ export default function SettingsModal({
           </div>
         </div>
 
-        <div className="mt-6 flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-md px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Cancel</button>
+        <div className="mt-6 flex flex-col-reverse sm:flex-row justify-end gap-2">
           <button
-            className="btn"
+            onClick={onClose}
+            className="rounded-md px-4 py-2.5 min-h-[44px] text-sm font-medium text-gray-700 hover:bg-gray-100 touch-manipulation border border-gray-200"
+          >
+            Cancel
+          </button>
+          <button
+            className="btn min-h-[44px] touch-manipulation"
             onClick={() => {
               onSave({ timezone, userName, birthDate, location });
               onClose();
