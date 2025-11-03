@@ -40,7 +40,7 @@
 }
 
 .bubble-out > span {
-  @apply w-full text-left leading-snug;
+  @apply text-left leading-snug;
 }
 
 .bubble-in {
@@ -50,7 +50,7 @@
 }
 
 .bubble-in > span {
-  @apply w-full text-left leading-snug;
+  @apply text-left leading-snug;
 }
 
 .bubble-tail-out {
