@@ -202,6 +202,49 @@ def initiate_calendar_connect(
         )
 
 
+def _fetch_calendar_info(user_id: str) -> Optional[str]:
+    """
+    Fetch calendar information to get user email.
+    
+    Args:
+        user_id: Composio user ID
+        
+    Returns:
+        Email address if found, None otherwise
+    """
+    try:
+        # Try to get calendar list to extract email
+        result = execute_calendar_tool(
+            "GOOGLECALENDAR_LIST_CALENDARS",
+            user_id,
+            arguments={}
+        )
+        
+        if isinstance(result, dict):
+            # Look for email in various possible locations
+            calendars = result.get("items") or result.get("data") or result.get("calendars")
+            if isinstance(calendars, list) and len(calendars) > 0:
+                primary_calendar = calendars[0]
+                if isinstance(primary_calendar, dict):
+                    email = (
+                        primary_calendar.get("id") or
+                        primary_calendar.get("email") or
+                        primary_calendar.get("summary")
+                    )
+                    if email and "@" in email:
+                        return email
+            
+            # Check top-level fields
+            email = _extract_email(result)
+            if email:
+                return email
+                
+    except Exception as exc:
+        logger.warning(f"Failed to fetch calendar info: {exc}")
+    
+    return None
+
+
 def fetch_calendar_status(
     payload: CalendarStatusPayload
 ) -> JSONResponse:
@@ -255,6 +298,10 @@ def fetch_calendar_status(
         if account:
             status_value = getattr(account, "status", None)
             email = _extract_email(account)
+            
+            # If we have an active connection but no email, try to fetch calendar info
+            if status_value and status_value.upper() == "ACTIVE" and not email and user_id:
+                email = _fetch_calendar_info(user_id)
             
             if status_value and status_value.upper() == "ACTIVE":
                 if user_id:
