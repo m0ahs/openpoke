@@ -267,7 +267,7 @@ def _log_search(tool_name: str, query: str, success: bool, result_count: int = 0
         )
 
 
-def search_web(
+async def search_web(
     query: str,
     num_results: Optional[int] = None,
     include_domains: Optional[List[str]] = None,
@@ -276,7 +276,7 @@ def search_web(
     """Execute a web search via the Exa engine using the configured MCP gateway."""
 
     try:
-        result = search_exa(
+        result = await search_exa(
             query,
             num_results=num_results or 5,
             include_domains=include_domains,
@@ -304,7 +304,7 @@ def search_web(
         }
 
 
-def search_news(
+async def search_news(
     query: str,
     num_results: Optional[int] = None,
 ) -> Dict[str, Any]:
@@ -327,7 +327,7 @@ def search_news(
     ]
 
     try:
-        result = search_exa(
+        result = await search_exa(
             query,
             num_results=num_results or 10,
             include_domains=news_domains,
@@ -354,7 +354,7 @@ def search_news(
         }
 
 
-def research_topic(
+async def research_topic(
     topic: str,
     focus_areas: Optional[List[str]] = None,
     num_results: Optional[int] = None,
@@ -363,7 +363,7 @@ def research_topic(
 
     if not focus_areas:
         # Single comprehensive search
-        return search_web(topic, num_results=num_results or 10)
+        return await search_web(topic, num_results=num_results or 10)
 
     # Search for each focus area
     results_by_area: Dict[str, Any] = {
@@ -377,7 +377,7 @@ def research_topic(
     for area in focus_areas:
         query = f"{topic} {area}"
         try:
-            area_results = search_exa(query, num_results=results_per_area)
+            area_results = await search_exa(query, num_results=results_per_area)
             results_by_area["focus_areas"][area] = area_results.get("results", [])
             results_by_area["total_results"] += len(area_results.get("results", []))
         except ExaSearchError as exc:
@@ -390,7 +390,7 @@ def research_topic(
     return results_by_area
 
 
-def search_company(
+async def search_company(
     company_name: str,
     aspects: Optional[List[str]] = None,
     num_results: Optional[int] = None,
@@ -411,7 +411,7 @@ def search_company(
     for aspect in aspects:
         query = f"{company_name} {aspect}"
         try:
-            aspect_results = search_exa(query, num_results=results_per_aspect)
+            aspect_results = await search_exa(query, num_results=results_per_aspect)
             company_results["aspects"][aspect] = aspect_results.get("results", [])
             company_results["total_results"] += len(aspect_results.get("results", []))
         except ExaSearchError as exc:
@@ -424,7 +424,7 @@ def search_company(
     return company_results
 
 
-def search_academic(
+async def search_academic(
     query: str,
     num_results: Optional[int] = None,
 ) -> Dict[str, Any]:
@@ -446,7 +446,7 @@ def search_academic(
     ]
 
     try:
-        result = search_exa(
+        result = await search_exa(
             query,
             num_results=num_results or 10,
             include_domains=academic_domains,
