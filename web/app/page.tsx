@@ -228,8 +228,8 @@ export default function Page() {
   const clearError = useCallback(() => setError(null), [setError]);
 
   return (
-    <main className="chat-bg flex min-h-screen flex-col p-2 sm:p-6">
-      <div className="chat-wrap flex flex-1 flex-col">
+    <main className="chat-bg flex h-full flex-col p-2 sm:p-6">
+      <div className="chat-wrap flex h-full flex-col">
         <ChatHeader onOpenSettings={openSettings} onClearHistory={triggerClearHistory} />
 
         <div className="card flex flex-1 flex-col overflow-hidden">
