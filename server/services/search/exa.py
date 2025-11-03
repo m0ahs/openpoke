@@ -40,83 +40,70 @@ def _extract_snippet(item: Any) -> Optional[str]:
     return None
 
 
-def search_exa(
+async def search_exa(
     query: str,
     *,
     num_results: int = _DEFAULT_MAX_RESULTS,
     include_domains: Optional[Iterable[str]] = None,
     exclude_domains: Optional[Iterable[str]] = None,
 ) -> Dict[str, Any]:
-    """Execute an Exa search request using the native SDK."""
+    """Asynchronously execute an Exa search request using the native SDK."""
 
-    async def do_search():
-        limit = max(1, min(int(num_results or _DEFAULT_MAX_RESULTS), _MAX_RESULTS))
-        include = _normalise_domains(include_domains)
-        exclude = _normalise_domains(exclude_domains)
+    limit = max(1, min(int(num_results or _DEFAULT_MAX_RESULTS), _MAX_RESULTS))
+    include = _normalise_domains(include_domains)
+    exclude = _normalise_domains(exclude_domains)
 
-        try:
-            client = get_exa_client()
-        except ExaError as exc:
-            logger.warning("Exa search unavailable: %s", exc)
-            raise ExaSearchError(str(exc)) from exc
+    try:
+        client = get_exa_client()
+    except ExaError as exc:
+        logger.warning("Exa search unavailable: %s", exc)
+        raise ExaSearchError(str(exc)) from exc
 
-        kwargs: Dict[str, Any] = {
-            "num_results": limit,
-            "use_autoprompt": True,
-        }
-        if include:
-            kwargs["include_domains"] = include
-        if exclude:
-            kwargs["exclude_domains"] = exclude
+    kwargs: Dict[str, Any] = {
+        "num_results": limit,
+        "use_autoprompt": True,
+    }
+    if include:
+        kwargs["include_domains"] = include
+    if exclude:
+        kwargs["exclude_domains"] = exclude
 
-        try:
-            # Run the synchronous SDK call in a separate thread
-            response = await asyncio.to_thread(client.search, query, **kwargs)
-        except Exception as exc:
-            logger.warning("Exa search request failed: %s", exc)
-            raise ExaSearchError(str(exc)) from exc
+    try:
+        # Run the synchronous SDK call in a separate thread to avoid blocking the event loop
+        response = await asyncio.to_thread(client.search, query, **kwargs)
+    except Exception as exc:
+        logger.warning("Exa search request failed: %s", exc)
+        raise ExaSearchError(str(exc)) from exc
 
-        raw_results = getattr(response, "results", None)
-        if not isinstance(raw_results, list):
-            logger.info("Exa search returned no structured results for query='%s'", query)
-            return {
-                "query": query,
-                "results": [],
-                "raw": repr(response),
-            }
-
-        normalised: List[Dict[str, Any]] = []
-        for item in raw_results:
-            if item is None:
-                continue
-
-            title = getattr(item, "title", None) or getattr(item, "id", None) or "Untitled"
-            normalised.append(
-                {
-                    "title": title,
-                    "url": getattr(item, "url", None),
-                    "score": getattr(item, "score", None),
-                    "snippet": _extract_snippet(item),
-                    "published": getattr(item, "published_date", None) or getattr(item, "published", None),
-                }
-            )
-
+    raw_results = getattr(response, "results", None)
+    if not isinstance(raw_results, list):
+        logger.info("Exa search returned no structured results for query='%s'", query)
         return {
             "query": query,
-            "results": normalised,
+            "results": [],
+            "raw": repr(response),
         }
 
-    # Run the async wrapper and return the result
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
+    normalised: List[Dict[str, Any]] = []
+    for item in raw_results:
+        if item is None:
+            continue
 
-    if loop and loop.is_running():
-        future = asyncio.run_coroutine_threadsafe(do_search(), loop)
-        return future.result()
+        title = getattr(item, "title", None) or getattr(item, "id", None) or "Untitled"
+        normalised.append(
+            {
+                "title": title,
+                "url": getattr(item, "url", None),
+                "score": getattr(item, "score", None),
+                "snippet": _extract_snippet(item),
+                "published": getattr(item, "published_date", None) or getattr(item, "published", None),
+            }
+        )
 
-    return asyncio.run(do_search())
+    return {
+        "query": query,
+        "results": normalised,
+    }
 
 
 __all__ = [
