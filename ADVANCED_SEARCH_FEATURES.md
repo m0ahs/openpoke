@@ -271,14 +271,14 @@ Rapport complet avec sources multiples
 ### Services
 
 ```python
-# Service basique (déjà existant)
+# Service basique (MCP - pour compatibilité)
 services/search/exa.py
     ↓
 def search_exa(query, num_results, include_domains, exclude_domains)
 ```
 
 ```python
-# Nouveau service avancé
+# Service avancé (Native Exa SDK) ⭐
 services/search/composio_exa.py
     ↓
 def generate_answer(query, num_results, ...) → Answer + Citations
@@ -287,34 +287,58 @@ def get_contents(urls) → Full Content
 def advanced_search(query, date_filters, category) → Advanced Results
 ```
 
-### Pattern MCP Unifié
+### Pattern Native Exa SDK
 
-Tous les outils utilisent le **même client MCP** :
+Les outils avancés utilisent le **SDK Exa natif** (exa_py) :
 
 ```python
-async def _call_composio_tool(tool_name, arguments):
-    async with streamablehttp_client(composio_url) as (read, write, _):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            result = await session.call_tool(tool_name, arguments)
+# Singleton client thread-safe
+_CLIENT_LOCK = threading.Lock()
+_CLIENT: Optional[Any] = None
+
+def _get_exa_client(settings: Optional[Any] = None):
+    """Get or create singleton Exa client."""
+    global _CLIENT
+    if _CLIENT is not None:
+        return _CLIENT
+
+    with _CLIENT_LOCK:
+        if _CLIENT is None:
+            from exa_py import Exa
+            api_key = settings.exa_api_key
+            _CLIENT = Exa(api_key=api_key)
+    return _CLIENT
+
+# Appels directs via SDK
+client = _get_exa_client()
+result = client.search_and_contents(query, num_results=5, text=True)
+result = client.find_similar(url, num_results=10)
+result = client.get_contents(urls, text=True)
 ```
 
-**Outils Composio Disponibles** :
-- `SEARCH` → search_web, search_news, etc.
-- `GENERATE_AN_ANSWER` → answer_question ⭐
-- `FIND_SIMILAR` → find_similar_content
-- `GET_CONTENTS_FROM_URLS_OR_DOCUMENT_IDS` → extract_content
+**Avantages du SDK natif** :
+- ✅ Plus rapide (pas de couche HTTP MCP)
+- ✅ Plus fiable (moins de points de défaillance)
+- ✅ Meilleure documentation (Exa officielle)
+- ✅ Plus de contrôle sur les paramètres
+- ✅ Mêmes patterns que Gmail (singleton thread-safe)
 
 ---
 
 ## Configuration
 
-Aucune configuration supplémentaire nécessaire ! Utilise les variables existantes :
+Configuration simple avec le SDK Exa natif :
 
 ```bash
+# Variable requise pour les outils avancés
+EXA_API_KEY=your_exa_api_key_here
+
+# Variables MCP (pour search_web basique uniquement)
 COMPOSIO_EXA_MCP_URL=https://backend.composio.dev/v3/mcp/.../mcp?user_id=exa
 COMPOSIO_API_KEY=ak_...
 ```
+
+**Note** : Les outils avancés (answer_question, find_similar, extract_content) nécessitent uniquement `EXA_API_KEY`. Le search_web basique continue d'utiliser le MCP.
 
 ---
 

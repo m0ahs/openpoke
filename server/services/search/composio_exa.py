@@ -1,8 +1,7 @@
-"""Enhanced Exa search integration via Composio SDK (same pattern as Gmail)."""
+"""Enhanced Exa search integration using native Exa Python SDK."""
 
 from __future__ import annotations
 
-import asyncio
 import threading
 from typing import Any, Dict, List, Optional
 
@@ -12,84 +11,45 @@ from ...logging_config import logger
 _DEFAULT_MAX_RESULTS = 5
 _MAX_RESULTS = 20
 
-# Singleton client (same pattern as Gmail)
+# Singleton client (thread-safe pattern)
 _CLIENT_LOCK = threading.Lock()
 _CLIENT: Optional[Any] = None
 
 
-class ComposioExaError(RuntimeError):
-    """Raised when Composio Exa tools are unavailable or misconfigured."""
+class ExaError(RuntimeError):
+    """Raised when Exa SDK is unavailable or misconfigured."""
 
 
-def _get_composio_client(settings: Optional[Any] = None):
-    """Get or create singleton Composio client (same pattern as Gmail)."""
+def _get_exa_client(settings: Optional[Any] = None):
+    """Get or create singleton Exa client."""
     global _CLIENT
     if _CLIENT is not None:
         return _CLIENT
 
     with _CLIENT_LOCK:
         if _CLIENT is None:
-            from composio import Composio  # type: ignore
+            try:
+                from exa_py import Exa  # type: ignore
+            except ImportError as exc:
+                raise ExaError(
+                    "exa_py package not installed; run: pip install exa_py"
+                ) from exc
 
             resolved_settings = settings or get_settings()
-            api_key = resolved_settings.composio_api_key
+            api_key = resolved_settings.exa_api_key
+
+            if not api_key:
+                raise ExaError(
+                    "EXA_API_KEY environment variable required for Exa SDK"
+                )
+
             try:
-                _CLIENT = Composio(api_key=api_key) if api_key else Composio()
-            except TypeError as exc:
-                if api_key:
-                    raise ComposioExaError(
-                        "Installed Composio SDK does not accept api_key; upgrade SDK or remove COMPOSIO_API_KEY"
-                    ) from exc
-                _CLIENT = Composio()
+                _CLIENT = Exa(api_key=api_key)
+                logger.info("Exa SDK client initialized successfully")
+            except Exception as exc:
+                raise ExaError(f"Failed to initialize Exa client: {exc}") from exc
+
     return _CLIENT
-
-
-def _normalize_tool_response(result: Any) -> Dict[str, Any]:
-    """Normalize Composio tool response (same pattern as Gmail)."""
-    payload_dict: Optional[Dict[str, Any]] = None
-    try:
-        if hasattr(result, "model_dump"):
-            payload_dict = result.model_dump()
-        elif hasattr(result, "dict"):
-            payload_dict = result.dict()
-    except Exception:
-        payload_dict = None
-
-    if payload_dict is None:
-        if isinstance(result, dict):
-            payload_dict = result
-        elif isinstance(result, list):
-            payload_dict = {"items": result}
-        else:
-            payload_dict = {"repr": str(result)}
-
-    return payload_dict
-
-
-def _call_composio_tool(
-    tool_name: str,
-    arguments: Dict[str, Any],
-) -> Dict[str, Any]:
-    """Call a Composio Exa tool via SDK (same pattern as Gmail)."""
-    settings = get_settings()
-
-    # For Exa tools, we use a generic user_id since no OAuth is needed
-    user_id = settings.composio_exa_user_id or "exa-user"
-
-    try:
-        client = _get_composio_client(settings)
-        result = client.client.tools.execute(
-            tool_name,
-            user_id=user_id,
-            arguments=arguments,
-        )
-        return _normalize_tool_response(result)
-    except Exception as exc:
-        logger.exception(
-            "composio exa tool execution failed",
-            extra={"tool": tool_name, "user_id": user_id},
-        )
-        raise ComposioExaError(f"{tool_name} invocation failed: {exc}") from exc
 
 
 def generate_answer_sync(
@@ -100,7 +60,7 @@ def generate_answer_sync(
     exclude_domains: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
-    Generate a direct, citation-backed answer using Exa's AI via Composio SDK.
+    Generate a direct, citation-backed answer using Exa's AI.
 
     This is the most powerful search tool - it returns a synthesized answer
     with citations rather than just search results.
@@ -114,26 +74,56 @@ def generate_answer_sync(
     Returns:
         Dict with 'answer' (text), 'citations' (list of sources), and metadata
     """
-    arguments: Dict[str, Any] = {
-        "query": query,
-        "numResults": min(num_results, _MAX_RESULTS),
-    }
-
-    if include_domains:
-        arguments["includeDomains"] = include_domains
-    if exclude_domains:
-        arguments["excludeDomains"] = exclude_domains
-
     try:
-        result = _call_composio_tool("EXA_GENERATE_AN_ANSWER", arguments)
-        return result
-    except ComposioExaError as exc:
+        client = _get_exa_client()
+
+        result = client.search_and_contents(
+            query,
+            num_results=min(num_results, _MAX_RESULTS),
+            use_autoprompt=True,
+            include_domains=include_domains,
+            exclude_domains=exclude_domains,
+            text=True,
+        )
+
+        # Extract answer and citations
+        answer_text = result.answer if hasattr(result, 'answer') else None
+        citations = []
+
+        if hasattr(result, 'results'):
+            for item in result.results:
+                citations.append({
+                    'url': item.url if hasattr(item, 'url') else None,
+                    'title': item.title if hasattr(item, 'title') else None,
+                    'text': item.text if hasattr(item, 'text') else None,
+                    'score': item.score if hasattr(item, 'score') else None,
+                })
+
+        logger.info(
+            f"generate_answer succeeded | query='{query}' | citations={len(citations)}"
+        )
+
+        return {
+            "query": query,
+            "answer": answer_text,
+            "citations": citations,
+        }
+
+    except ExaError as exc:
         logger.warning(f"generate_answer failed: {exc}")
         return {
             "query": query,
             "answer": None,
             "citations": [],
             "error": str(exc),
+        }
+    except Exception as exc:
+        logger.exception("generate_answer unexpected error")
+        return {
+            "query": query,
+            "answer": None,
+            "citations": [],
+            "error": f"Unexpected error: {exc}",
         }
 
 
@@ -145,7 +135,7 @@ def find_similar(
     include_highlights: bool = False,
 ) -> Dict[str, Any]:
     """
-    Find web pages semantically similar to a given URL via Composio SDK.
+    Find web pages semantically similar to a given URL using Exa SDK.
 
     Uses embeddings-based search to find content similar to the reference URL.
 
@@ -158,25 +148,63 @@ def find_similar(
     Returns:
         Dict with 'results' (list of similar pages) and metadata
     """
-    arguments: Dict[str, Any] = {
-        "url": url,
-        "numResults": min(num_results, _MAX_RESULTS),
-    }
-
-    if include_text:
-        arguments["text"] = True
-    if include_highlights:
-        arguments["highlights"] = True
-
     try:
-        result = _call_composio_tool("EXA_FIND_SIMILAR", arguments)
-        return result
-    except ComposioExaError as exc:
+        client = _get_exa_client()
+
+        if include_text:
+            result = client.find_similar_and_contents(
+                url,
+                num_results=min(num_results, _MAX_RESULTS),
+                text=True,
+                highlights=include_highlights,
+            )
+        else:
+            result = client.find_similar(
+                url,
+                num_results=min(num_results, _MAX_RESULTS),
+            )
+
+        # Extract results
+        results = []
+        if hasattr(result, 'results'):
+            for item in result.results:
+                result_dict = {
+                    'url': item.url if hasattr(item, 'url') else None,
+                    'title': item.title if hasattr(item, 'title') else None,
+                    'score': item.score if hasattr(item, 'score') else None,
+                }
+
+                if include_text and hasattr(item, 'text'):
+                    result_dict['text'] = item.text
+
+                if include_highlights and hasattr(item, 'highlights'):
+                    result_dict['highlights'] = item.highlights
+
+                results.append(result_dict)
+
+        logger.info(
+            f"find_similar succeeded | url='{url}' | results={len(results)}"
+        )
+
+        return {
+            "url": url,
+            "results": results,
+            "total_results": len(results),
+        }
+
+    except ExaError as exc:
         logger.warning(f"find_similar failed: {exc}")
         return {
             "url": url,
             "results": [],
             "error": str(exc),
+        }
+    except Exception as exc:
+        logger.exception("find_similar unexpected error")
+        return {
+            "url": url,
+            "results": [],
+            "error": f"Unexpected error: {exc}",
         }
 
 
@@ -187,34 +215,65 @@ def get_contents(
     include_highlights: bool = False,
 ) -> Dict[str, Any]:
     """
-    Retrieve full content from a list of URLs or Exa document IDs via Composio SDK.
+    Retrieve full content from a list of URLs using Exa SDK.
 
     Args:
-        urls: List of URLs or Exa document IDs to fetch content from
+        urls: List of URLs to fetch content from
         include_text: Whether to include full text content
         include_highlights: Whether to include highlighted excerpts
 
     Returns:
         Dict with 'contents' (list of retrieved content) and metadata
     """
-    arguments: Dict[str, Any] = {
-        "urls": urls,
-    }
-
-    if include_text:
-        arguments["text"] = True
-    if include_highlights:
-        arguments["highlights"] = True
-
     try:
-        result = _call_composio_tool("EXA_GET_CONTENTS_FROM_URLS_OR_DOCUMENT_IDS", arguments)
-        return result
-    except ComposioExaError as exc:
+        client = _get_exa_client()
+
+        result = client.get_contents(
+            urls,
+            text=include_text,
+            highlights=include_highlights,
+        )
+
+        # Extract contents
+        contents = []
+        if hasattr(result, 'results'):
+            for item in result.results:
+                content_dict = {
+                    'url': item.url if hasattr(item, 'url') else None,
+                    'title': item.title if hasattr(item, 'title') else None,
+                }
+
+                if include_text and hasattr(item, 'text'):
+                    content_dict['text'] = item.text
+
+                if include_highlights and hasattr(item, 'highlights'):
+                    content_dict['highlights'] = item.highlights
+
+                contents.append(content_dict)
+
+        logger.info(
+            f"get_contents succeeded | urls={len(urls)} | retrieved={len(contents)}"
+        )
+
+        return {
+            "urls": urls,
+            "contents": contents,
+            "total_retrieved": len(contents),
+        }
+
+    except ExaError as exc:
         logger.warning(f"get_contents failed: {exc}")
         return {
             "urls": urls,
             "contents": [],
             "error": str(exc),
+        }
+    except Exception as exc:
+        logger.exception("get_contents unexpected error")
+        return {
+            "urls": urls,
+            "contents": [],
+            "error": f"Unexpected error: {exc}",
         }
 
 
@@ -229,7 +288,7 @@ def advanced_search(
     category: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    Advanced search with date filtering and categorization via Composio SDK.
+    Advanced search with date filtering and categorization using Exa SDK.
 
     Args:
         query: Search query
@@ -243,31 +302,61 @@ def advanced_search(
     Returns:
         Dict with search results and metadata
     """
-    arguments: Dict[str, Any] = {
-        "query": query,
-        "numResults": min(num_results, _MAX_RESULTS),
-    }
-
-    if include_domains:
-        arguments["includeDomains"] = include_domains
-    if exclude_domains:
-        arguments["excludeDomains"] = exclude_domains
-    if start_published_date:
-        arguments["startPublishedDate"] = start_published_date
-    if end_published_date:
-        arguments["endPublishedDate"] = end_published_date
-    if category:
-        arguments["category"] = category
-
     try:
-        result = _call_composio_tool("EXA_SEARCH", arguments)
-        return result
-    except ComposioExaError as exc:
+        client = _get_exa_client()
+
+        kwargs: Dict[str, Any] = {
+            "num_results": min(num_results, _MAX_RESULTS),
+            "use_autoprompt": True,
+        }
+
+        if include_domains:
+            kwargs["include_domains"] = include_domains
+        if exclude_domains:
+            kwargs["exclude_domains"] = exclude_domains
+        if start_published_date:
+            kwargs["start_published_date"] = start_published_date
+        if end_published_date:
+            kwargs["end_published_date"] = end_published_date
+        if category:
+            kwargs["category"] = category
+
+        result = client.search(query, **kwargs)
+
+        # Extract results
+        results = []
+        if hasattr(result, 'results'):
+            for item in result.results:
+                results.append({
+                    'url': item.url if hasattr(item, 'url') else None,
+                    'title': item.title if hasattr(item, 'title') else None,
+                    'score': item.score if hasattr(item, 'score') else None,
+                    'published_date': item.published_date if hasattr(item, 'published_date') else None,
+                })
+
+        logger.info(
+            f"advanced_search succeeded | query='{query}' | results={len(results)}"
+        )
+
+        return {
+            "query": query,
+            "results": results,
+            "total_results": len(results),
+        }
+
+    except ExaError as exc:
         logger.warning(f"advanced_search failed: {exc}")
         return {
             "query": query,
             "results": [],
             "error": str(exc),
+        }
+    except Exception as exc:
+        logger.exception("advanced_search unexpected error")
+        return {
+            "query": query,
+            "results": [],
+            "error": f"Unexpected error: {exc}",
         }
 
 
@@ -278,7 +367,7 @@ def generate_answer(query: str, **kwargs: Any) -> Dict[str, Any]:
 
 
 __all__ = [
-    "ComposioExaError",
+    "ExaError",
     "generate_answer",
     "generate_answer_sync",
     "find_similar",

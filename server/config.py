@@ -68,6 +68,7 @@ class Settings(BaseModel):
     composio_exa_mcp_url: Optional[str] = Field(default=os.getenv("COMPOSIO_EXA_MCP_URL"))
     composio_exa_user_id: Optional[str] = Field(default=os.getenv("COMPOSIO_EXA_USER_ID"))
     composio_exa_tool_name: str = Field(default=os.getenv("COMPOSIO_EXA_TOOL_NAME", "search_web"))
+    exa_api_key: Optional[str] = Field(default=os.getenv("EXA_API_KEY"))
 
     # HTTP behaviour
     cors_allow_origins_raw: str = Field(default=os.getenv("OPENPOKE_CORS_ALLOW_ORIGINS", "*"))

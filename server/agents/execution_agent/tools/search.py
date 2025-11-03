@@ -6,7 +6,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from server.services.search.exa import ExaSearchError, search_exa
 from server.services.search.composio_exa import (
-    ComposioExaError,
+    ExaError,
     generate_answer,
     find_similar,
     get_contents,
@@ -512,7 +512,7 @@ def answer_question(
             "citations": citations,
             "raw_result": result,
         }
-    except ComposioExaError as exc:
+    except ExaError as exc:
         error_msg = str(exc)
         _log_search("answer_question", question, success=False, error=error_msg)
         return {
@@ -563,7 +563,7 @@ def find_similar_content(
             "results": results,
             "total_results": len(results),
         }
-    except ComposioExaError as exc:
+    except ExaError as exc:
         error_msg = str(exc)
         _log_search("find_similar_content", url, success=False, error=error_msg)
         return {
@@ -613,7 +613,7 @@ def extract_content(
             "contents": contents,
             "total_retrieved": len(contents),
         }
-    except ComposioExaError as exc:
+    except ExaError as exc:
         error_msg = str(exc)
         _log_search("extract_content", f"{len(limited_urls)} URLs", success=False, error=error_msg)
         return {
