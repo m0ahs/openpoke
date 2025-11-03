@@ -65,10 +65,9 @@ class Settings(BaseModel):
     openrouter_api_key: Optional[str] = Field(default=os.getenv("OPENROUTER_API_KEY"))
     composio_gmail_auth_config_id: Optional[str] = Field(default=os.getenv("COMPOSIO_GMAIL_AUTH_CONFIG_ID"))
     composio_api_key: Optional[str] = Field(default=os.getenv("COMPOSIO_API_KEY"))
-    smithery_base_url: str = Field(default=os.getenv("SMITHERY_BASE_URL", "https://server.smithery.ai/exa/mcp"))
-    smithery_exa_api_key: Optional[str] = Field(default=os.getenv("SMITHERY_EXA_API_KEY"))
-    smithery_exa_profile: Optional[str] = Field(default=os.getenv("SMITHERY_EXA_PROFILE"))
-    smithery_exa_tool_name: str = Field(default=os.getenv("SMITHERY_EXA_TOOL_NAME", "exa_search"))
+    composio_exa_mcp_url: Optional[str] = Field(default=os.getenv("COMPOSIO_EXA_MCP_URL"))
+    composio_exa_user_id: Optional[str] = Field(default=os.getenv("COMPOSIO_EXA_USER_ID"))
+    composio_exa_tool_name: str = Field(default=os.getenv("COMPOSIO_EXA_TOOL_NAME", "search_web"))
 
     # HTTP behaviour
     cors_allow_origins_raw: str = Field(default=os.getenv("OPENPOKE_CORS_ALLOW_ORIGINS", "*"))

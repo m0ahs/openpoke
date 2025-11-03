@@ -1,11 +1,11 @@
-"""Exa search integration via Smithery MCP server."""
+"""Exa search integration via the configured MCP gateway (Composio)."""
 
 from __future__ import annotations
 
 import asyncio
 import json
 from typing import Any, Dict, Iterable, List, Optional
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
@@ -28,6 +28,27 @@ def _normalise_domains(domains: Optional[Iterable[str]]) -> Optional[List[str]]:
     return cleaned or None
 
 
+def _ensure_query_parameters(base_url: str, params: Dict[str, Optional[str]]) -> str:
+    if not params:
+        return base_url
+
+    parsed = urlparse(base_url)
+    existing = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    updated = False
+
+    for key, value in params.items():
+        if value is None or key in existing:
+            continue
+        existing[key] = value
+        updated = True
+
+    if not updated:
+        return base_url
+
+    new_query = urlencode(existing)
+    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment))
+
+
 async def _fetch_via_mcp(
     query: str,
     limit: int,
@@ -35,19 +56,18 @@ async def _fetch_via_mcp(
     exclude_domains: Optional[List[str]],
 ) -> Dict[str, Any]:
     settings = get_settings()
-    api_key = settings.smithery_exa_api_key
-    profile = settings.smithery_exa_profile
-    base_url = settings.smithery_base_url
-    tool_name = settings.smithery_exa_tool_name or "exa_search"
+    base_url = settings.composio_exa_mcp_url
+    tool_name = settings.composio_exa_tool_name or "search_web"
 
-    if not api_key or not profile:
-        raise ExaSearchError("Smithery credentials missing; set SMITHERY_EXA_API_KEY and SMITHERY_EXA_PROFILE")
     if not base_url:
-        raise ExaSearchError("Smithery base URL missing; set SMITHERY_BASE_URL")
+        raise ExaSearchError("Composio MCP URL missing; set COMPOSIO_EXA_MCP_URL")
 
-    params = urlencode({"api_key": api_key, "profile": profile})
-    separator = "&" if "?" in base_url else "?"
-    target_url = f"{base_url}{separator}{params}"
+    target_url = _ensure_query_parameters(
+        base_url,
+        {
+            "user_id": settings.composio_exa_user_id,
+        },
+    )
 
     arguments: Dict[str, Any] = {
         "query": query,
@@ -102,7 +122,7 @@ async def search_exa_async(
     include_domains: Optional[Iterable[str]] = None,
     exclude_domains: Optional[Iterable[str]] = None,
 ) -> Dict[str, Any]:
-    """Execute an Exa search request via Smithery MCP."""
+    """Execute an Exa search request via the Composio MCP endpoint."""
 
     limit = max(1, min(int(num_results or _DEFAULT_MAX_RESULTS), _MAX_RESULTS))
     include = _normalise_domains(include_domains)
@@ -152,7 +172,7 @@ def search_exa(
     include_domains: Optional[Iterable[str]] = None,
     exclude_domains: Optional[Iterable[str]] = None,
 ) -> Dict[str, Any]:
-    """Synchronously execute an Exa search via Smithery."""
+    """Synchronously execute an Exa search via the Composio MCP endpoint."""
 
     try:
         loop = asyncio.get_running_loop()
