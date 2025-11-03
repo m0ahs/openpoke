@@ -17,6 +17,7 @@ export function useSettings() {
   });
 
   useEffect(() => {
+    // Load from localStorage first (fast)
     try {
       const timezone = localStorage.getItem('user_timezone') || '';
       const userName = localStorage.getItem('user_name') || '';
@@ -24,6 +25,29 @@ export function useSettings() {
       const location = localStorage.getItem('user_location') || '';
       setSettings({ timezone, userName, birthDate, location });
     } catch {}
+
+    // Then fetch from backend (persistent)
+    fetch('/api/profile/load')
+      .then(res => res.json())
+      .then(data => {
+        if (data.ok && data.profile) {
+          const profile = data.profile;
+          const updatedSettings = {
+            timezone: localStorage.getItem('user_timezone') || '',
+            userName: profile.userName || '',
+            birthDate: profile.birthDate || '',
+            location: profile.location || ''
+          };
+          setSettings(updatedSettings);
+          // Sync back to localStorage
+          try {
+            if (profile.userName) localStorage.setItem('user_name', profile.userName);
+            if (profile.birthDate) localStorage.setItem('user_birth_date', profile.birthDate);
+            if (profile.location) localStorage.setItem('user_location', profile.location);
+          } catch {}
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const persist = useCallback(async (s: Settings) => {
