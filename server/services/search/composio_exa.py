@@ -1,12 +1,10 @@
-"""Enhanced Exa search integration via Composio MCP with advanced features."""
+"""Enhanced Exa search integration via Composio SDK (same pattern as Gmail)."""
 
 from __future__ import annotations
 
 import asyncio
+import threading
 from typing import Any, Dict, List, Optional
-
-from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
 
 from ...config import get_settings
 from ...logging_config import logger
@@ -14,56 +12,87 @@ from ...logging_config import logger
 _DEFAULT_MAX_RESULTS = 5
 _MAX_RESULTS = 20
 
+# Singleton client (same pattern as Gmail)
+_CLIENT_LOCK = threading.Lock()
+_CLIENT: Optional[Any] = None
+
 
 class ComposioExaError(RuntimeError):
     """Raised when Composio Exa tools are unavailable or misconfigured."""
 
 
-async def _call_composio_tool(
+def _get_composio_client(settings: Optional[Any] = None):
+    """Get or create singleton Composio client (same pattern as Gmail)."""
+    global _CLIENT
+    if _CLIENT is not None:
+        return _CLIENT
+
+    with _CLIENT_LOCK:
+        if _CLIENT is None:
+            from composio import Composio  # type: ignore
+
+            resolved_settings = settings or get_settings()
+            api_key = resolved_settings.composio_api_key
+            try:
+                _CLIENT = Composio(api_key=api_key) if api_key else Composio()
+            except TypeError as exc:
+                if api_key:
+                    raise ComposioExaError(
+                        "Installed Composio SDK does not accept api_key; upgrade SDK or remove COMPOSIO_API_KEY"
+                    ) from exc
+                _CLIENT = Composio()
+    return _CLIENT
+
+
+def _normalize_tool_response(result: Any) -> Dict[str, Any]:
+    """Normalize Composio tool response (same pattern as Gmail)."""
+    payload_dict: Optional[Dict[str, Any]] = None
+    try:
+        if hasattr(result, "model_dump"):
+            payload_dict = result.model_dump()
+        elif hasattr(result, "dict"):
+            payload_dict = result.dict()
+    except Exception:
+        payload_dict = None
+
+    if payload_dict is None:
+        if isinstance(result, dict):
+            payload_dict = result
+        elif isinstance(result, list):
+            payload_dict = {"items": result}
+        else:
+            payload_dict = {"repr": str(result)}
+
+    return payload_dict
+
+
+def _call_composio_tool(
     tool_name: str,
     arguments: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Call a Composio Exa tool via MCP."""
+    """Call a Composio Exa tool via SDK (same pattern as Gmail)."""
     settings = get_settings()
-    base_url = settings.composio_exa_mcp_url
 
-    if not base_url:
-        raise ComposioExaError("Composio MCP URL missing; set COMPOSIO_EXA_MCP_URL")
-
-    # Ensure user_id is in URL
-    if "?" in base_url:
-        target_url = base_url if "user_id=" in base_url else f"{base_url}&user_id={settings.composio_exa_user_id or 'exa'}"
-    else:
-        target_url = f"{base_url}?user_id={settings.composio_exa_user_id or 'exa'}"
+    # For Exa tools, we use a generic user_id since no OAuth is needed
+    user_id = settings.composio_exa_user_id or "exa-user"
 
     try:
-        async with streamablehttp_client(target_url) as (read, write, _):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                tool_result = await session.call_tool(tool_name, arguments)
+        client = _get_composio_client(settings)
+        result = client.client.tools.execute(
+            tool_name,
+            user_id=user_id,
+            arguments=arguments,
+        )
+        return _normalize_tool_response(result)
     except Exception as exc:
-        logger.warning(f"Composio tool {tool_name} failed: {exc}")
-        raise ComposioExaError(f"Failed to call {tool_name}: {exc}") from exc
-
-    # Normalize response
-    payload: Any = tool_result
-    if hasattr(tool_result, "model_dump"):
-        payload = tool_result.model_dump()
-    elif hasattr(tool_result, "dict"):
-        payload = tool_result.dict()
-
-    if isinstance(payload, dict):
-        return payload
-
-    if isinstance(payload, (list, tuple)):
-        if payload and isinstance(payload[0], dict) and "text" in payload[0]:
-            return {"data": [item.get("text", "") for item in payload]}
-        return {"data": payload}
-
-    return {"raw": str(payload)}
+        logger.exception(
+            "composio exa tool execution failed",
+            extra={"tool": tool_name, "user_id": user_id},
+        )
+        raise ComposioExaError(f"{tool_name} invocation failed: {exc}") from exc
 
 
-async def generate_answer_async(
+def generate_answer_sync(
     query: str,
     *,
     num_results: int = 5,
@@ -71,7 +100,7 @@ async def generate_answer_async(
     exclude_domains: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
-    Generate a direct, citation-backed answer using Exa's AI.
+    Generate a direct, citation-backed answer using Exa's AI via Composio SDK.
 
     This is the most powerful search tool - it returns a synthesized answer
     with citations rather than just search results.
@@ -96,7 +125,7 @@ async def generate_answer_async(
         arguments["excludeDomains"] = exclude_domains
 
     try:
-        result = await _call_composio_tool("GENERATE_AN_ANSWER", arguments)
+        result = _call_composio_tool("EXA_GENERATE_AN_ANSWER", arguments)
         return result
     except ComposioExaError as exc:
         logger.warning(f"generate_answer failed: {exc}")
@@ -108,7 +137,7 @@ async def generate_answer_async(
         }
 
 
-async def find_similar_async(
+def find_similar(
     url: str,
     *,
     num_results: int = 10,
@@ -116,7 +145,7 @@ async def find_similar_async(
     include_highlights: bool = False,
 ) -> Dict[str, Any]:
     """
-    Find web pages semantically similar to a given URL.
+    Find web pages semantically similar to a given URL via Composio SDK.
 
     Uses embeddings-based search to find content similar to the reference URL.
 
@@ -140,7 +169,7 @@ async def find_similar_async(
         arguments["highlights"] = True
 
     try:
-        result = await _call_composio_tool("FIND_SIMILAR", arguments)
+        result = _call_composio_tool("EXA_FIND_SIMILAR", arguments)
         return result
     except ComposioExaError as exc:
         logger.warning(f"find_similar failed: {exc}")
@@ -151,14 +180,14 @@ async def find_similar_async(
         }
 
 
-async def get_contents_async(
+def get_contents(
     urls: List[str],
     *,
     include_text: bool = True,
     include_highlights: bool = False,
 ) -> Dict[str, Any]:
     """
-    Retrieve full content from a list of URLs or Exa document IDs.
+    Retrieve full content from a list of URLs or Exa document IDs via Composio SDK.
 
     Args:
         urls: List of URLs or Exa document IDs to fetch content from
@@ -178,7 +207,7 @@ async def get_contents_async(
         arguments["highlights"] = True
 
     try:
-        result = await _call_composio_tool("GET_CONTENTS_FROM_URLS_OR_DOCUMENT_IDS", arguments)
+        result = _call_composio_tool("EXA_GET_CONTENTS_FROM_URLS_OR_DOCUMENT_IDS", arguments)
         return result
     except ComposioExaError as exc:
         logger.warning(f"get_contents failed: {exc}")
@@ -189,7 +218,7 @@ async def get_contents_async(
         }
 
 
-async def advanced_search_async(
+def advanced_search(
     query: str,
     *,
     num_results: int = 10,
@@ -200,7 +229,7 @@ async def advanced_search_async(
     category: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    Advanced search with date filtering and categorization.
+    Advanced search with date filtering and categorization via Composio SDK.
 
     Args:
         query: Search query
@@ -231,7 +260,7 @@ async def advanced_search_async(
         arguments["category"] = category
 
     try:
-        result = await _call_composio_tool("SEARCH", arguments)
+        result = _call_composio_tool("EXA_SEARCH", arguments)
         return result
     except ComposioExaError as exc:
         logger.warning(f"advanced_search failed: {exc}")
@@ -242,95 +271,17 @@ async def advanced_search_async(
         }
 
 
-# Synchronous wrappers
-def generate_answer(
-    query: str,
-    **kwargs: Any,
-) -> Dict[str, Any]:
-    """Synchronous wrapper for generate_answer_async."""
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-
-    if loop and loop.is_running():
-        future = asyncio.run_coroutine_threadsafe(
-            generate_answer_async(query, **kwargs),
-            loop,
-        )
-        return future.result()
-
-    return asyncio.run(generate_answer_async(query, **kwargs))
-
-
-def find_similar(
-    url: str,
-    **kwargs: Any,
-) -> Dict[str, Any]:
-    """Synchronous wrapper for find_similar_async."""
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-
-    if loop and loop.is_running():
-        future = asyncio.run_coroutine_threadsafe(
-            find_similar_async(url, **kwargs),
-            loop,
-        )
-        return future.result()
-
-    return asyncio.run(find_similar_async(url, **kwargs))
-
-
-def get_contents(
-    urls: List[str],
-    **kwargs: Any,
-) -> Dict[str, Any]:
-    """Synchronous wrapper for get_contents_async."""
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-
-    if loop and loop.is_running():
-        future = asyncio.run_coroutine_threadsafe(
-            get_contents_async(urls, **kwargs),
-            loop,
-        )
-        return future.result()
-
-    return asyncio.run(get_contents_async(urls, **kwargs))
-
-
-def advanced_search(
-    query: str,
-    **kwargs: Any,
-) -> Dict[str, Any]:
-    """Synchronous wrapper for advanced_search_async."""
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-
-    if loop and loop.is_running():
-        future = asyncio.run_coroutine_threadsafe(
-            advanced_search_async(query, **kwargs),
-            loop,
-        )
-        return future.result()
-
-    return asyncio.run(advanced_search_async(query, **kwargs))
+# Keep the original function name for backwards compatibility
+def generate_answer(query: str, **kwargs: Any) -> Dict[str, Any]:
+    """Alias for generate_answer_sync."""
+    return generate_answer_sync(query, **kwargs)
 
 
 __all__ = [
     "ComposioExaError",
     "generate_answer",
-    "generate_answer_async",
+    "generate_answer_sync",
     "find_similar",
-    "find_similar_async",
     "get_contents",
-    "get_contents_async",
     "advanced_search",
-    "advanced_search_async",
 ]
