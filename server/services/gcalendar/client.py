@@ -1,4 +1,14 @@
-"""Google Calendar client for Composio integration."""
+"""Google Calendar client for Composio integration.
+
+KNOWN ISSUE (2025-11-04):
+    Composio's execute_action fails when calling GOOGLECALENDAR_LIST_CALENDARS
+    after successful OAuth connection. This is a backend configuration bug on 
+    Composio's side, not a permissions issue. The connection is valid but the
+    execute_action endpoint crashes, preventing us from fetching calendar metadata.
+    
+    Workaround: We return connection success even without email/calendar list.
+    TODO: Dev needs to check Composio backend config and API integration settings.
+"""
 
 from __future__ import annotations
 
@@ -174,9 +184,17 @@ def initiate_calendar_connect(
     
     auth_config_id = payload.auth_config_id or settings.composio_calendar_auth_config_id or ""
     if not auth_config_id:
+        logger.error(
+            "COMPOSIO_CALENDAR_AUTH_CONFIG_ID not configured",
+            extra={
+                "required_env": "COMPOSIO_CALENDAR_AUTH_CONFIG_ID",
+                "solution": "Set this environment variable with your Composio Calendar auth config ID"
+            }
+        )
         return error_response(
-            "Missing auth_config_id. Set COMPOSIO_CALENDAR_AUTH_CONFIG_ID or pass auth_config_id.",
-            status_code=status.HTTP_400_BAD_REQUEST,
+            "Calendar integration not configured. Missing COMPOSIO_CALENDAR_AUTH_CONFIG_ID environment variable. "
+            "Please contact your administrator to set up the Calendar integration.",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
 
     user_id = payload.user_id or f"web-{os.getpid()}"
@@ -214,11 +232,24 @@ def _fetch_calendar_info(user_id: str) -> Optional[str]:
     """
     try:
         # Try to get calendar list to extract email
+        # NOTE: This may fail due to Composio execute_action bug
         result = execute_calendar_tool(
             "GOOGLECALENDAR_LIST_CALENDARS",
             user_id,
             arguments={}
         )
+        
+        # Check if there's an error in the result
+        if isinstance(result, dict) and result.get("error"):
+            logger.error(
+                f"Composio execute_action error when fetching calendar list: {result.get('error')}",
+                extra={
+                    "user_id": user_id,
+                    "tool": "GOOGLECALENDAR_LIST_CALENDARS",
+                    "composio_bug": "execute_action failure - backend config issue"
+                }
+            )
+            return None
         
         if isinstance(result, dict):
             # Look for email in various possible locations
@@ -240,7 +271,14 @@ def _fetch_calendar_info(user_id: str) -> Optional[str]:
                 return email
                 
     except Exception as exc:
-        logger.warning(f"Failed to fetch calendar info: {exc}")
+        logger.error(
+            f"Exception while fetching calendar info - likely Composio backend bug: {exc}",
+            extra={
+                "user_id": user_id,
+                "error_type": type(exc).__name__,
+                "composio_bug": "execute_action failure - needs backend config review"
+            }
+        )
     
     return None
 
@@ -308,13 +346,15 @@ def fetch_calendar_status(
                     _set_active_calendar_user_id(user_id)
                     if email:
                         _cache_profile(user_id, {"email": email})
-                        
+                
+                # Return connected status even if email fetch failed (Composio bug workaround)
                 return JSONResponse({
                     "ok": True,
                     "status": "active",
-                    "email": email,
+                    "email": email or "Connected (email unavailable - Composio execute_action bug)",
                     "connection_request_id": connection_request_id,
                     "user_id": user_id,
+                    "warning": None if email else "Calendar connected but unable to fetch email due to Composio backend issue"
                 })
                 
         return JSONResponse({
