@@ -17,37 +17,49 @@ export function useSettings() {
   });
 
   useEffect(() => {
-    // Load from localStorage first (fast)
-    try {
-      const timezone = localStorage.getItem('user_timezone') || '';
-      const userName = localStorage.getItem('user_name') || '';
-      const birthDate = localStorage.getItem('user_birth_date') || '';
-      const location = localStorage.getItem('user_location') || '';
-      setSettings({ timezone, userName, birthDate, location });
-    } catch {}
-
-    // Then fetch from backend (persistent)
+    // Fetch from backend FIRST (source of truth)
     fetch('/api/profile/load')
       .then(res => res.json())
       .then(data => {
+        const timezone = localStorage.getItem('user_timezone') || '';
+
         if (data.ok && data.profile) {
           const profile = data.profile;
+          // Backend is the source of truth
           const updatedSettings = {
-            timezone: localStorage.getItem('user_timezone') || '',
+            timezone,
             userName: profile.userName || '',
             birthDate: profile.birthDate || '',
             location: profile.location || ''
           };
           setSettings(updatedSettings);
-          // Sync back to localStorage
+
+          // Sync to localStorage for offline access
           try {
             if (profile.userName) localStorage.setItem('user_name', profile.userName);
             if (profile.birthDate) localStorage.setItem('user_birth_date', profile.birthDate);
             if (profile.location) localStorage.setItem('user_location', profile.location);
           } catch {}
+        } else {
+          // Fallback to localStorage only if backend fails
+          try {
+            const userName = localStorage.getItem('user_name') || '';
+            const birthDate = localStorage.getItem('user_birth_date') || '';
+            const location = localStorage.getItem('user_location') || '';
+            setSettings({ timezone, userName, birthDate, location });
+          } catch {}
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        // If backend is unreachable, use localStorage as fallback
+        try {
+          const timezone = localStorage.getItem('user_timezone') || '';
+          const userName = localStorage.getItem('user_name') || '';
+          const birthDate = localStorage.getItem('user_birth_date') || '';
+          const location = localStorage.getItem('user_location') || '';
+          setSettings({ timezone, userName, birthDate, location });
+        } catch {}
+      });
   }, []);
 
   const persist = useCallback(async (s: Settings) => {
