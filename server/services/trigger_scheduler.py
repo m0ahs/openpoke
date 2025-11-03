@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Set
 
 from ..agents.execution_agent.batch_manager import ExecutionBatchManager
 from ..agents.execution_agent.runtime import ExecutionResult
 from ..logging_config import logger
 from .triggers import TriggerRecord, get_trigger_service
+from .triggers.utils import parse_iso
 
 
 UTC = timezone.utc
@@ -67,13 +68,43 @@ class TriggerScheduler:
 
     async def _poll_once(self) -> None:
         now = _utc_now()
-        due_triggers = self._service.get_due_triggers(before=now)
+        # Look for triggers due in the next 30 seconds to account for polling interval
+        look_ahead = now + timedelta(seconds=30)
+        due_triggers = self._service.get_due_triggers(before=look_ahead)
+
+        logger.debug(
+            "Polling for due triggers",
+            extra={
+                "now": _isoformat(now),
+                "look_ahead": _isoformat(look_ahead),
+                "due_count": len(due_triggers)
+            },
+        )
+
         if not due_triggers:
             return
 
         for trigger in due_triggers:
             if trigger.id in self._in_flight:
+                logger.debug(
+                    "Trigger already in flight",
+                    extra={"trigger_id": trigger.id, "agent": trigger.agent_name}
+                )
                 continue
+
+            # Only execute if actually due (within 5 seconds of now)
+            next_fire = parse_iso(trigger.next_trigger) if trigger.next_trigger else None
+            if next_fire and (next_fire - now) > timedelta(seconds=5):
+                logger.debug(
+                    "Trigger not yet due",
+                    extra={
+                        "trigger_id": trigger.id,
+                        "next_fire": trigger.next_trigger,
+                        "seconds_until_due": (next_fire - now).total_seconds()
+                    }
+                )
+                continue
+
             self._in_flight.add(trigger.id)
             asyncio.create_task(self._execute_trigger(trigger), name=f"trigger-{trigger.id}")
 
@@ -81,30 +112,52 @@ class TriggerScheduler:
         try:
             fired_at = _utc_now()
             instructions = self._format_instructions(trigger, fired_at)
+
             logger.info(
                 "Dispatching trigger",
                 extra={
                     "trigger_id": trigger.id,
                     "agent": trigger.agent_name,
                     "scheduled_for": trigger.next_trigger,
+                    "fired_at": _isoformat(fired_at),
+                    "payload_preview": trigger.payload[:100] + "..." if len(trigger.payload) > 100 else trigger.payload
                 },
             )
+
             execution_manager = ExecutionBatchManager()
             result = await execution_manager.execute_agent(
                 trigger.agent_name,
                 instructions,
             )
+
             if result.success:
+                logger.info(
+                    "Trigger completed successfully",
+                    extra={
+                        "trigger_id": trigger.id,
+                        "agent": trigger.agent_name,
+                        "response_length": len(result.response) if result.response else 0
+                    }
+                )
                 self._handle_success(trigger, fired_at)
             else:
-                error_text = result.error or result.response
+                error_text = result.error or result.response or "Unknown error"
+                logger.warning(
+                    "Trigger execution failed",
+                    extra={
+                        "trigger_id": trigger.id,
+                        "agent": trigger.agent_name,
+                        "error": error_text[:200] + "..." if len(error_text) > 200 else error_text
+                    },
+                )
                 self._handle_failure(trigger, fired_at, error_text)
-        except Exception as exc:  # pragma: no cover - defensive
-            self._handle_failure(trigger, _utc_now(), str(exc))
+        except Exception as exc:
+            error_msg = f"Unexpected error during trigger execution: {str(exc)}"
             logger.exception(
                 "Trigger execution failed unexpectedly",
-                extra={"trigger_id": trigger.id, "agent": trigger.agent_name},
+                extra={"trigger_id": trigger.id, "agent": trigger.agent_name, "error": error_msg},
             )
+            self._handle_failure(trigger, _utc_now(), error_msg)
         finally:
             self._in_flight.discard(trigger.id)
 
