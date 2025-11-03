@@ -1,9 +1,8 @@
 interface ChatHeaderProps {
   onOpenSettings: () => void;
-  onClearHistory: () => void;
 }
 
-export function ChatHeader({ onOpenSettings, onClearHistory }: ChatHeaderProps) {
+export function ChatHeader({ onOpenSettings }: ChatHeaderProps) {
   return (
     <header className="mb-2 flex items-center justify-between sm:mb-4">
       <div className="flex items-center">
@@ -15,12 +14,6 @@ export function ChatHeader({ onOpenSettings, onClearHistory }: ChatHeaderProps) 
           onClick={onOpenSettings}
         >
           Settings
-        </button>
-        <button
-          className="rounded-md border border-gray-200 px-2 py-1.5 text-xs hover:bg-gray-50 sm:px-3 sm:py-2 sm:text-sm"
-          onClick={onClearHistory}
-        >
-          Clear
         </button>
       </div>
     </header>

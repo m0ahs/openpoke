@@ -193,23 +193,6 @@ export default function Page() {
     [loadHistory],
   );
 
-  const handleClearHistory = useCallback(async () => {
-    try {
-      const res = await fetch('/api/chat/history', { method: 'DELETE' });
-      if (!res.ok) {
-        console.error('Failed to clear chat history', res.statusText);
-        return;
-      }
-      setMessages([]);
-    } catch (err) {
-      console.error('Failed to clear chat history', err);
-    }
-  }, [setMessages]);
-
-  const triggerClearHistory = useCallback(() => {
-    void handleClearHistory();
-  }, [handleClearHistory]);
-
   const handleSubmit = useCallback(async () => {
     if (!canSubmit) return;
     const value = input;
@@ -230,7 +213,7 @@ export default function Page() {
   return (
     <main className="chat-bg flex h-full flex-col p-2 sm:p-6">
       <div className="chat-wrap flex h-full flex-col">
-        <ChatHeader onOpenSettings={openSettings} onClearHistory={triggerClearHistory} />
+        <ChatHeader onOpenSettings={openSettings} />
 
         <div className="card flex flex-1 flex-col overflow-hidden">
           <ChatMessages
