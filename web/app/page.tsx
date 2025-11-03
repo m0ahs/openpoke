@@ -228,11 +228,11 @@ export default function Page() {
   const clearError = useCallback(() => setError(null), [setError]);
 
   return (
-    <main className="chat-bg min-h-screen p-4 sm:p-6">
-      <div className="chat-wrap flex flex-col">
+    <main className="chat-bg flex h-full flex-col p-2 sm:p-6">
+      <div className="chat-wrap flex h-full flex-col">
         <ChatHeader onOpenSettings={openSettings} onClearHistory={triggerClearHistory} />
 
-        <div className="card flex-1 overflow-hidden">
+        <div className="card flex flex-1 flex-col overflow-hidden">
           <ChatMessages
             messages={messages}
             isWaitingForResponse={isWaitingForResponse}
@@ -240,7 +240,7 @@ export default function Page() {
             onScroll={handleScroll}
           />
 
-          <div className="border-t border-gray-200 p-3">
+          <div className="border-t border-gray-200 p-2 sm:p-3">
             {error && <ErrorBanner message={error} onDismiss={clearError} />}
 
             <ChatInput

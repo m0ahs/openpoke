@@ -3,13 +3,13 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Alyn Chat',
-  description: 'A beautiful OpenRouter chat powered by Vercel AI SDK',
+  description: 'A human-like AI assistant developed by Alyn Engineering',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body className="min-h-screen bg-white text-gray-900 antialiased">
+    <html lang="en" className="h-full">
+      <body className="h-full bg-white text-gray-900 antialiased">
         {children}
       </body>
     </html>
