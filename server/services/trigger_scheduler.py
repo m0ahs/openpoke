@@ -72,7 +72,7 @@ class TriggerScheduler:
         look_ahead = now + timedelta(seconds=30)
         due_triggers = self._service.get_due_triggers(before=look_ahead)
 
-        logger.debug(
+        logger.info(
             "Polling for due triggers",
             extra={
                 "now": _isoformat(now),
@@ -86,7 +86,7 @@ class TriggerScheduler:
 
         for trigger in due_triggers:
             if trigger.id in self._in_flight:
-                logger.debug(
+                logger.info(
                     "Trigger already in flight",
                     extra={"trigger_id": trigger.id, "agent": trigger.agent_name}
                 )
@@ -95,7 +95,7 @@ class TriggerScheduler:
             # Only execute if actually due (within 5 seconds of now)
             next_fire = parse_iso(trigger.next_trigger) if trigger.next_trigger else None
             if next_fire and (next_fire - now) > timedelta(seconds=5):
-                logger.debug(
+                logger.info(
                     "Trigger not yet due",
                     extra={
                         "trigger_id": trigger.id,
