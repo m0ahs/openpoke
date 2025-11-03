@@ -83,22 +83,14 @@ class TriggerScheduler:
             logger.warning(f"Could not list triggers: {e}")
 
         logger.info(
-            f"Found {len(due_triggers)} due triggers, {len(all_triggers)} total triggers for Rappels personnels",
-            extra={
-                "now": _isoformat(now),
-                "look_ahead": _isoformat(look_ahead),
-                "due_count": len(due_triggers),
-                "total_count": len(all_triggers),
-                "trigger_details": [
-                    {
-                        "id": t.id,
-                        "next_trigger": t.next_trigger,
-                        "status": t.status,
-                        "payload": t.payload[:50] + "..." if len(t.payload) > 50 else t.payload
-                    } for t in all_triggers
-                ]
-            },
+            f"Found {len(due_triggers)} due triggers, {len(all_triggers)} total triggers for Rappels personnels"
         )
+
+        # Log details of each trigger
+        for trigger in all_triggers:
+            logger.info(
+                f"Trigger {trigger.id}: next_trigger={trigger.next_trigger}, status={trigger.status}, payload='{trigger.payload[:30]}...'"
+            )
 
         if not due_triggers:
             return
