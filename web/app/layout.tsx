@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'OpenPoke Chat',
+  title: 'Alyn Chat',
   description: 'A beautiful OpenRouter chat powered by Vercel AI SDK',
 };
 

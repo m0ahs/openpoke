@@ -7,7 +7,7 @@ export function ChatHeader({ onOpenSettings, onClearHistory }: ChatHeaderProps) 
   return (
     <header className="mb-4 flex items-center justify-between">
       <div className="flex items-center">
-        <h1 className="text-lg font-semibold">OpenPoke 🌴</h1>
+        <h1 className="text-lg font-semibold">Alyn</h1>
       </div>
       <div className="flex items-center gap-2">
         <button
