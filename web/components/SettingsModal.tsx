@@ -248,8 +248,18 @@ export default function SettingsModal({
       setGmailEmail('');
       setGmailProfile(null);
       if (url) {
-        window.open(url, '_blank', 'noopener');
-        setGmailStatusMessage('Gmail authorization opened in a new tab. Complete it, then press “Refresh status”.');
+        // Check if we're on mobile/PWA
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        const isPWA = window.matchMedia('(display-mode: standalone)').matches;
+
+        if (isMobile || isPWA) {
+          // On mobile/PWA, open in same window to avoid popup blockers
+          window.location.href = url;
+        } else {
+          // On desktop, open in new tab
+          window.open(url, '_blank', 'noopener');
+          setGmailStatusMessage('Gmail authorization opened in a new tab. Complete it, then press "Refresh status".');
+        }
       } else {
         setGmailStatusMessage('Connection initiated. Refresh status once authorization completes.');
       }
