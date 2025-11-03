@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const serverBase = process.env.PY_SERVER_URL || 'http://localhost:8001';
+const resolveServerBase = () =>
+  process.env['PY_SERVER_URL'] || process.env['NEXT_PUBLIC_PY_SERVER_URL'] || 'http://localhost:8001';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    const serverBase = resolveServerBase();
 
     const response = await fetch(`${serverBase}/api/v1/profile/save`, {
       method: 'POST',
