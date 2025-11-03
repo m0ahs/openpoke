@@ -34,23 +34,23 @@
 }
 
 .bubble-out {
-  @apply inline-flex max-w-[85%] items-start rounded-[1.75rem] bg-brand-600 px-4 py-2 text-sm text-white shadow-lg transition-transform sm:max-w-[80%] sm:px-5 sm:py-2.5;
-  min-width: 2.25rem;
+  @apply inline-flex max-w-[85%] items-center justify-center rounded-[1.75rem] bg-brand-600 px-4 py-2 text-sm text-white shadow-lg transition-transform sm:max-w-[80%] sm:px-5 sm:py-2.5;
+  min-width: 5rem;
   min-height: 2.25rem;
 }
 
 .bubble-out > span {
-  @apply w-full text-left leading-snug;
+  @apply w-full text-center leading-snug;
 }
 
 .bubble-in {
-  @apply inline-flex max-w-[85%] items-start rounded-[1.75rem] border border-gray-200 bg-white px-4 py-2 text-sm text-gray-900 shadow-sm sm:max-w-[80%] sm:px-5 sm:py-2.5;
-  min-width: 2.25rem;
+  @apply inline-flex max-w-[85%] items-center justify-center rounded-[1.75rem] border border-gray-200 bg-white px-4 py-2 text-sm text-gray-900 shadow-sm sm:max-w-[80%] sm:px-5 sm:py-2.5;
+  min-width: 5rem;
   min-height: 2.25rem;
 }
 
 .bubble-in > span {
-  @apply w-full text-left leading-snug;
+  @apply w-full text-center leading-snug;
 }
 
 .bubble-tail-out {
