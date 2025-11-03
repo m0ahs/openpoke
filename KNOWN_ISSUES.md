@@ -1,5 +1,93 @@
 # Known Issues
 
+## Google Calendar Integration - Tool Names Not Found (404)
+
+**Status:** 🔴 Active Issue  
+**Date Reported:** November 4, 2025  
+**Severity:** Critical - Calendar tools cannot execute
+
+### Problem Description
+
+Calendar tool execution fails with 404 error:
+```
+composio_client.NotFoundError: Error code: 404
+Tool GOOGLECALENDAR_LIST_EVENTS not found
+```
+
+The tool names we're using (`GOOGLECALENDAR_LIST_EVENTS`, `GOOGLECALENDAR_CREATE_EVENT`, etc.) don't match the actual tool names in Composio's GOOGLECALENDAR toolkit.
+
+### Error Example
+
+```
+2025-11-03 23:52:36 - ERROR - Calendar tool execution failed: GOOGLECALENDAR_LIST_EVENTS
+composio_client.NotFoundError: Tool GOOGLECALENDAR_LIST_EVENTS not found
+```
+
+### Root Cause
+
+We assumed standard tool naming conventions, but Composio may use different names for Calendar tools. Need to discover the actual tool names available in the GOOGLECALENDAR toolkit.
+
+### Solution
+
+**Step 1: Discover Available Tools**
+
+Run the discovery script:
+```bash
+cd /Users/josephmbaibisso/conductor/openpoke/.conductor/tokyo
+python discover_calendar_tools.py
+```
+
+This will:
+- Query Composio API for all GOOGLECALENDAR tools
+- Print tool names and descriptions
+- Save results to `composio_calendar_tools.txt`
+
+**Step 2: Update Tool Mappings**
+
+Once you have the correct tool names, update the mappings in:
+`server/agents/execution_agent/tools/gcalendar.py`
+
+Change the `composio_action` values:
+```python
+def _calendar_list_events(agent_name: str, **kwargs: Any) -> Dict[str, Any]:
+    return _execute_calendar_action(
+        agent_name=agent_name,
+        tool_name="calendar_list_events",
+        composio_action="ACTUAL_COMPOSIO_TOOL_NAME_HERE",  # Update this
+        arguments=kwargs,
+    )
+```
+
+### Alternative Solutions
+
+**Option 1: Use Composio's Web UI**
+1. Go to https://composio.dev/
+2. Navigate to GOOGLECALENDAR toolkit
+3. View "Tools & Trigger Types" tab
+4. Copy exact tool names
+
+**Option 2: Check Composio Documentation**
+- Review https://docs.composio.dev/toolkits/google-calendar
+- Look for official tool name conventions
+
+### Files to Update
+
+After discovering correct names:
+- `server/agents/execution_agent/tools/gcalendar.py` - Update all `composio_action` values
+- Test each tool individually
+
+### Current Tool Mappings (INCORRECT)
+
+```python
+"calendar_create_event" → "GOOGLECALENDAR_CREATE_EVENT" ❌
+"calendar_list_events" → "GOOGLECALENDAR_LIST_EVENTS" ❌
+"calendar_update_event" → "GOOGLECALENDAR_UPDATE_EVENT" ❌
+"calendar_delete_event" → "GOOGLECALENDAR_DELETE_EVENT" ❌
+"calendar_find_free_time" → "GOOGLECALENDAR_FIND_FREE_TIME" ❌
+```
+
+---
+
 ## Google Calendar Integration - Configuration Required
 
 **Status:** ⚙️ Configuration Issue  

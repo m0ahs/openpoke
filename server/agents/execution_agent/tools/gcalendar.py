@@ -251,7 +251,7 @@ def _calendar_update_event(agent_name: str, **kwargs: Any) -> Dict[str, Any]:
     return _execute_calendar_action(
         agent_name=agent_name,
         tool_name="calendar_update_event",
-        composio_action="GOOGLECALENDAR_UPDATE_EVENT",
+        composio_action="GOOGLECALENDAR_UPDATE_GOOGLE_EVENT",
         arguments=kwargs,
     )
 
@@ -271,7 +271,7 @@ def _calendar_find_free_time(agent_name: str, **kwargs: Any) -> Dict[str, Any]:
     return _execute_calendar_action(
         agent_name=agent_name,
         tool_name="calendar_find_free_time",
-        composio_action="GOOGLECALENDAR_FIND_FREE_TIME",
+        composio_action="GOOGLECALENDAR_FIND_FREE_SLOTS",
         arguments=kwargs,
     )
 
