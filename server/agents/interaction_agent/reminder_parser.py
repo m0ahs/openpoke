@@ -35,9 +35,9 @@ class ReminderMessageParser:
     Uses structured patterns instead of hard-coded string matching.
     """
 
-    # Pattern for SUCCESS notification messages
+    # Pattern for SUCCESS notification messages - more flexible to match any agent name
     NOTIFICATION_PATTERN = re.compile(
-        r'\[SUCCESS\]\s*Rappels\s+personnels\s*:\s*(.+)',
+        r'\[SUCCESS\]\s*([^:]+?)\s*:\s*(.+)$',
         re.DOTALL | re.IGNORECASE
     )
 
@@ -119,14 +119,16 @@ class ReminderMessageParser:
         """
         match = self.NOTIFICATION_PATTERN.search(message)
         if match:
-            reminder_content = match.group(1).strip()
+            agent_name = match.group(1).strip()
+            reminder_content = match.group(2).strip()
             # Clean up leading colons or other artifacts
             reminder_content = re.sub(r'^:\s*', '', reminder_content)
 
             return ReminderMessage(
                 message_type=ReminderMessageType.NOTIFICATION,
                 original_text=message,
-                reminder_content=reminder_content
+                reminder_content=reminder_content,
+                reminder_title=f"Notification from {agent_name}"
             )
         return None
 
