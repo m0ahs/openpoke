@@ -4,7 +4,7 @@ import asyncio
 import re
 from html import escape, unescape
 from pathlib import Path
-from typing import Dict, Iterator, List, Optional, Protocol, Tuple
+from typing import AsyncIterator, Dict, List, Optional, Protocol, Tuple, cast
 
 from ...config import get_settings
 from ...logging_config import logger
@@ -69,7 +69,7 @@ class ConversationLog:
     def _ensure_directory(self) -> None:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
-        except Exception as exc:  # pragma: no cover - defensive
+        except OSError as exc:  # pragma: no cover - defensive
             logger.warning("conversation log directory creation failed", extra={"error": str(exc)})
 
     async def _append(self, tag: str, payload: str) -> str:
@@ -78,18 +78,21 @@ class ConversationLog:
         Thread-safety: Acquires _lock to ensure atomic file writes and
         prevent concurrent access corruption.
         """
-        timestamp = now_in_user_timezone("%Y-%m-%d %H:%M:%S")
+        timestamp = cast(str, now_in_user_timezone("%Y-%m-%d %H:%M:%S"))
         entry = self._formatter(tag, timestamp, str(payload))
         async with self._lock:
             try:
                 with self._path.open("a", encoding="utf-8") as handle:
                     handle.write(entry)
-            except Exception as exc:  # pragma: no cover - defensive
+            except OSError as exc:  # pragma: no cover - defensive
                 logger.error(
                     "conversation log append failed",
                     extra={"error": str(exc), "tag": tag, "path": str(self._path)},
                 )
-                raise
+                raise ConversationLogError(
+                    "Failed to append to conversation log",
+                    operation="append",
+                ) from exc
         self._notify_summarization()
         return timestamp
 
@@ -119,7 +122,7 @@ class ConversationLog:
         timestamp = attributes.get("timestamp", "")
         return tag, timestamp, _decode_payload(payload)
 
-    async def iter_entries(self) -> Iterator[Tuple[str, str, str]]:
+    async def iter_entries(self) -> AsyncIterator[Tuple[str, str, str]]:
         """Iterate over all entries in the conversation log.
 
         Thread-safety: Acquires _lock to ensure consistent read of log file
@@ -130,11 +133,11 @@ class ConversationLog:
                 lines = self._path.read_text(encoding="utf-8").splitlines()
             except FileNotFoundError:
                 lines = []
-            except Exception as exc:  # pragma: no cover - defensive
+            except OSError as exc:  # pragma: no cover - defensive
                 logger.error(
                     "conversation log read failed", extra={"error": str(exc), "path": str(self._path)}
                 )
-                raise
+                raise ConversationLogError("Failed to read conversation log", operation="read") from exc
         for line in lines:
             item = self._parse_line(line)
             if item is not None:
@@ -181,7 +184,7 @@ class ConversationLog:
 
         try:
             from .summarization import schedule_summarization  # type: ignore import-not-found
-        except Exception as exc:  # pragma: no cover - defensive
+        except ImportError as exc:  # pragma: no cover - defensive
             logger.debug(
                 "summarization scheduler unavailable",
                 extra={"error": str(exc)},
@@ -190,9 +193,14 @@ class ConversationLog:
 
         try:
             schedule_summarization()
-        except Exception as exc:  # pragma: no cover - defensive
+        except (RuntimeError, ConversationLogError) as exc:  # pragma: no cover - defensive
             logger.warning(
                 "failed to schedule summarization",
+                extra={"error": str(exc)},
+            )
+        except OSError as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "failed to schedule summarization due to I/O error",
                 extra={"error": str(exc)},
             )
 

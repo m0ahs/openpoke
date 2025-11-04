@@ -11,7 +11,7 @@ from server.config import get_settings
 from server.openrouter_client import request_chat_completion
 from server.logging_config import logger
 from server.utils.json_utils import safe_json_dump, safe_json_load
-from server.utils.exceptions import AgentExecutionError, ToolExecutionError
+from server.utils.exceptions import AgentExecutionError, OpenPokeError, ToolExecutionError
 from server.utils.tool_validation import get_execution_tool_names, split_known_tools
 
 
@@ -87,7 +87,7 @@ class ExecutionAgentRuntime:
                     assistant_entry["tool_calls"] = raw_tool_calls
                 messages.append(assistant_entry)
 
-                plan_signature = self._build_plan_signature( # type: ignore
+                plan_signature = self._build_plan_signature(
                     assistant_entry["content"], parsed_tool_calls
                 )
 
@@ -152,22 +152,42 @@ class ExecutionAgentRuntime:
 
                     executed_tool_signatures.add(tool_signature)
                     tools_executed.append(tool_name)
-                    logger.info(
-                        f"[{self.agent.name}] Executing tool: {tool_name}",
-                        extra={"agent": self.agent.name, "tool": tool_name, "iteration": iteration + 1}
-                    )
+                    self._log_tool_invocation(tool_name, stage="start", arguments=tool_args)
 
-                    success, result = await self._execute_tool(tool_name, tool_args)
+                    try:
+                        success, result = await self._execute_tool(tool_name, tool_args)
+                    except ToolExecutionError as exc:
+                        success = False
+                        result = {"error": str(exc)}
+                    except (OpenPokeError, asyncio.CancelledError):
+                        raise
+                    except Exception as exc:
+                        logger.exception(
+                            f"[{self.agent.name}] Tool {tool_name} raised an unexpected error",
+                            extra={
+                                "agent": self.agent.name,
+                                "tool": tool_name,
+                                "error": str(exc),
+                                "error_type": type(exc).__name__,
+                            },
+                        )
+                        raise AgentExecutionError(
+                            f"Tool '{tool_name}' crashed unexpectedly",
+                            agent_name=self.agent.name,
+                            details={
+                                "tool": tool_name,
+                                "arguments": tool_args,
+                                "error": str(exc),
+                                "error_type": type(exc).__name__,
+                            },
+                        ) from exc
 
                     if success:
-                        logger.info(
-                            f"[{self.agent.name}] Tool {tool_name} completed successfully",
-                            extra={"agent": self.agent.name, "tool": tool_name}
-                        )
+                        self._log_tool_invocation(tool_name, stage="done", arguments=tool_args, result=result)
                         record_payload = safe_json_dump(result)
                     else:
                         error_detail = result.get("error") if isinstance(result, dict) else str(result)
-                        logger.warning(f"[{self.agent.name}] Tool {tool_name} failed: {error_detail}")
+                        self._log_tool_invocation(tool_name, stage="error", arguments=tool_args, detail={"error": error_detail})
                         record_payload = error_detail
 
                     self.agent.record_tool_execution(
@@ -242,23 +262,6 @@ class ExecutionAgentRuntime:
                 agent_name=self.agent.name,
                 success=False,
                 response=f"Failed to complete task: {error_msg}",
-                error=error_msg
-            )
-        except Exception as e:
-            # Handle unexpected errors with full logging
-            logger.error(
-                f"[{self.agent.name}] Unexpected execution error",
-                extra={"error": str(e), "error_type": type(e).__name__},
-                exc_info=True
-            )
-            error_msg = str(e)
-            failure_text = f"Failed to complete task: {error_msg}"
-            self.agent.record_response(f"Error: {error_msg}")
-
-            return ExecutionResult(
-                agent_name=self.agent.name,
-                success=False,
-                response=failure_text,
                 error=error_msg
             )
 
@@ -432,24 +435,40 @@ class ExecutionAgentRuntime:
             return True, result
         except (ValueError, KeyError, TypeError) as e:
             # Handle expected parameter errors
-            logger.warning(
-                f"[{self.agent.name}] Tool parameter error: {tool_name}",
-                extra={"error": str(e), "error_type": type(e).__name__, "arguments": arguments}
-            )
             return False, {"error": f"Invalid parameters: {str(e)}"}
         except ToolExecutionError as e:
             # Handle tool-specific errors
-            logger.error(
-                f"[{self.agent.name}] Tool execution error: {tool_name}",
-                extra={"error": str(e), "tool": e.tool_name, "arguments": e.arguments},
-                exc_info=True
-            )
             return False, {"error": str(e)}
-        except Exception as e:
-            # Handle unexpected tool errors
-            logger.error(
-                f"[{self.agent.name}] Unexpected tool error: {tool_name}",
-                extra={"error": str(e), "error_type": type(e).__name__},
-                exc_info=True
-            )
-            return False, {"error": str(e)}
+
+    def _log_tool_invocation(
+        self,
+        tool_name: str,
+        *,
+        stage: str,
+        arguments: Optional[Dict[str, Any]] = None,
+        result: Optional[Any] = None,
+        detail: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Emit structured logs for tool lifecycle events."""
+
+        log_payload: Dict[str, Any] = {
+            "tool": tool_name,
+            "stage": stage,
+            "agent": self.agent.name,
+        }
+
+        if arguments is not None:
+            log_payload["arguments"] = arguments
+
+        if result is not None:
+            log_payload["result"] = result
+
+        if detail:
+            log_payload.update(detail)
+
+        if stage == "done":
+            logger.info(f"[{self.agent.name}] Tool '{tool_name}' completed")
+        elif stage in {"error", "rejected"}:
+            logger.warning(f"[{self.agent.name}] Tool '{tool_name}' {stage}")
+        else:
+            logger.debug(f"[{self.agent.name}] Tool '{tool_name}' {stage}")

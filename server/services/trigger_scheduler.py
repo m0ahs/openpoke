@@ -7,9 +7,13 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Set
 
 from ..agents.execution_agent.batch_manager import ExecutionBatchManager
-from ..agents.execution_agent.runtime import ExecutionResult
 from ..logging_config import logger
-from ..utils.exceptions import TriggerSchedulingError
+from ..utils.exceptions import (
+    AgentExecutionError,
+    OpenPokeError,
+    ToolExecutionError,
+    TriggerSchedulingError,
+)
 from .triggers import TriggerRecord, get_trigger_service
 from .triggers.utils import parse_iso, to_storage_timestamp
 
@@ -66,7 +70,7 @@ class TriggerScheduler:
                 logger.info("Trigger scheduler stopped")
 
     async def _run(self) -> None:
-        logger.info("Trigger scheduler loop starting")
+        logger.debug("Trigger scheduler loop starting")
         try:
             while self._running:
                 logger.debug("Trigger scheduler polling cycle")
@@ -74,8 +78,12 @@ class TriggerScheduler:
                 await asyncio.sleep(self._poll_interval)
         except asyncio.CancelledError:  # pragma: no cover - shutdown path
             raise
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.exception("Trigger scheduler loop crashed", extra={"error": str(exc)})
+        except (TriggerSchedulingError, AgentExecutionError, ToolExecutionError, OpenPokeError) as exc:  # pragma: no cover - defensive
+            logger.exception(
+                "Trigger scheduler loop crashed",
+                extra={"error": str(exc), "error_type": type(exc).__name__},
+            )
+            raise
 
     async def _poll_once(self) -> None:
         """Poll for due triggers and schedule execution.
@@ -176,13 +184,30 @@ class TriggerScheduler:
                     },
                 )
                 self._handle_failure(trigger, fired_at, error_text)
-        except Exception as exc:
-            error_msg = f"Unexpected error during trigger execution: {str(exc)}"
-            logger.exception(
-                "Trigger execution failed unexpectedly",
-                extra={"trigger_id": trigger.id, "agent": trigger.agent_name, "error": error_msg},
+        except TriggerSchedulingError as exc:
+            logger.error(
+                "Trigger execution failed",
+                extra={
+                    "trigger_id": trigger.id,
+                    "agent": trigger.agent_name,
+                    "error": str(exc),
+                    "error_type": type(exc).__name__,
+                },
+                exc_info=True,
             )
-            self._handle_failure(trigger, _utc_now(), error_msg)
+            self._handle_failure(trigger, _utc_now(), str(exc))
+        except (AgentExecutionError, ToolExecutionError, OpenPokeError) as exc:
+            logger.error(
+                "Trigger execution failed",
+                extra={
+                    "trigger_id": trigger.id,
+                    "agent": trigger.agent_name,
+                    "error": str(exc),
+                    "error_type": type(exc).__name__,
+                },
+                exc_info=True,
+            )
+            self._handle_failure(trigger, _utc_now(), str(exc))
         finally:
             # Remove from in-flight set with lock protection
             async with self._in_flight_lock:
