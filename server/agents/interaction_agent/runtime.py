@@ -100,6 +100,17 @@ class InteractionAgentRuntime:
     async def handle_agent_message(self, agent_message: str) -> InteractionResult:
         """Process a status update emitted by an execution agent."""
 
+        # Special handling for reminder notifications
+        if self._is_reminder_notification(agent_message):
+            reminder_text = self._extract_reminder_text(agent_message)
+            if reminder_text:
+                self.conversation_log.record_reply(reminder_text)
+                return InteractionResult(
+                    success=True,
+                    response=reminder_text,
+                    execution_agents_used=1,
+                )
+
         try:
             transcript_before = self._load_conversation_transcript()
             self.conversation_log.record_agent_message(agent_message)
@@ -427,3 +438,23 @@ class InteractionAgentRuntime:
             return summary.user_messages[-1]
 
         return summary.last_assistant_text
+
+    def _is_reminder_notification(self, agent_message: str) -> bool:
+        """Check if the agent message is a successful reminder notification."""
+        return (
+            "[SUCCESS] Rappels personnels:" in agent_message or
+            "[SUCCESS] Rappels personnels " in agent_message
+        )
+
+    def _extract_reminder_text(self, agent_message: str) -> Optional[str]:
+        """Extract the reminder text from a successful reminder notification."""
+        if "[SUCCESS] Rappels personnels:" in agent_message:
+            # Extract text after the success marker
+            parts = agent_message.split("[SUCCESS] Rappels personnels:", 1)
+            if len(parts) > 1:
+                reminder_text = parts[1].strip()
+                # Clean up any leading/trailing artifacts
+                if reminder_text.startswith(": "):
+                    reminder_text = reminder_text[2:]
+                return reminder_text
+        return None
