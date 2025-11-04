@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 
 from server.agents.execution_agent.agent import ExecutionAgent
 from server.agents.execution_agent.tools import get_tool_schemas, get_tool_registry
+from server.agents.tool_parsing import extract_tool_calls
+from server.agents.tool_formatting import format_tool_result
 from server.config import get_settings
 from server.openrouter_client import request_chat_completion
 from server.logging_config import logger
@@ -284,74 +286,8 @@ class ExecutionAgentRuntime:
     # Parse and validate tool calls from LLM response into structured format
     def _extract_tool_calls(self, raw_tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Extract tool calls from an assistant message."""
-        tool_calls: List[Dict[str, Any]] = []
         known_tools = get_execution_tool_names()
-
-        for tool in raw_tools:
-            function = tool.get("function", {})
-            name = function.get("name", "")
-            args = function.get("arguments", "")
-
-            # Validate tool name - reject malformed names
-            if not name or not isinstance(name, str):
-                logger.warning("Tool call missing or invalid name: %s", tool)
-                continue
-
-            # Check for concatenated tool names (common LLM hallucination)
-            # This properly detects tools like "gmail_send_emailcalendar_create_event"
-            # but allows valid tools like "gmail_send_email" or "calendar_create_event"
-            concatenated = split_known_tools(name, known_tools)
-            if len(concatenated) > 1:
-                logger.warning(
-                    "Tool call rejected - concatenated name detected: %s (components: %s)",
-                    name,
-                    concatenated,
-                )
-                # Add error tool call to inform the LLM about the mistake
-                tool_calls.append({
-                    "id": tool.get("id"),
-                    "name": concatenated[0],  # Use first valid tool name
-                    "arguments": {
-                        "__invalid_arguments__": (
-                            f"CRITICAL ERROR: You attempted to call multiple tools in a single invocation. "
-                            f"The tool name '{name}' is invalid because it combines these tools: {', '.join(concatenated)}. "
-                            f"You MUST call each tool separately in its own tool invocation. "
-                            f"Make separate calls for: {' and '.join(concatenated)}."
-                        )
-                    },
-                })
-                continue
-
-            # Check if tool name is valid (exists in registry)
-            if name not in known_tools:
-                logger.warning("Tool call for unknown tool: %s", name)
-                tool_calls.append({
-                    "id": tool.get("id"),
-                    "name": name,
-                    "arguments": {
-                        "__invalid_arguments__": (
-                            f"ERROR: Unknown tool '{name}'. "
-                            f"Please use only the tools provided in your schema."
-                        )
-                    },
-                })
-                continue
-
-            # Parse arguments using safe_json_load
-            parsed_args, error = safe_json_load(args)
-            if error:
-                logger.warning("Tool call has invalid arguments: %s", error)
-                args = {}
-            else:
-                args = parsed_args
-
-            tool_calls.append({
-                "id": tool.get("id"),
-                "name": name,
-                "arguments": args,
-            })
-
-        return tool_calls
+        return extract_tool_calls(raw_tools, known_tools)
 
     @staticmethod
     def _freeze_for_signature(value: Any) -> Any:
@@ -397,22 +333,7 @@ class ExecutionAgentRuntime:
         arguments: Dict[str, Any],
     ) -> str:
         """Build a structured string for tool responses."""
-        if success:
-            payload: Dict[str, Any] = {
-                "tool": tool_name,
-                "status": "success",
-                "arguments": arguments,
-                "result": result,
-            }
-        else:
-            error_detail = result.get("error") if isinstance(result, dict) else str(result)
-            payload = {
-                "tool": tool_name,
-                "status": "error",
-                "arguments": arguments,
-                "error": error_detail,
-            }
-        return safe_json_dump(payload)
+        return format_tool_result(tool_name, success, result, arguments)
 
     # Execute tool function from registry with error handling and async support
     async def _execute_tool(self, tool_name: str, arguments: Dict) -> Tuple[bool, Any]:

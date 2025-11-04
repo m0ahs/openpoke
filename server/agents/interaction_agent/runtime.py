@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Optional, Set
 from .agent import build_system_prompt, prepare_message_with_history
 from .tools import ToolResult, get_tool_schemas, handle_tool_call, _split_known_tools
 from .reminder_parser import ReminderMessageParser, ReminderMessageType
+from ..tool_parsing import parse_tool_calls, ParsedToolCall
+from ..tool_formatting import format_tool_result
 from ...config import get_settings
 from ...services.conversation import (
     get_conversation_log,
@@ -27,15 +29,6 @@ class InteractionResult:
     response: str
     error: Optional[str] = None
     execution_agents_used: int = 0
-
-
-@dataclass
-class _ToolCall:
-    """Parsed tool invocation from an LLM response."""
-
-    identifier: Optional[str]
-    name: str
-    arguments: Dict[str, Any]
 
 
 @dataclass
@@ -400,60 +393,11 @@ class InteractionAgentRuntime:
             raise RuntimeError("LLM response did not include an assistant message")
         return message
 
-    # Convert raw LLM tool calls into structured _ToolCall objects with validation
-    def _parse_tool_calls(self, raw_tool_calls: List[Dict[str, Any]]) -> List[_ToolCall]:
+    # Convert raw LLM tool calls into structured ParsedToolCall objects with validation
+    def _parse_tool_calls(self, raw_tool_calls: List[Dict[str, Any]]) -> List[ParsedToolCall]:
         """Normalize tool call payloads from the LLM."""
-
-        parsed: List[_ToolCall] = []
-        for raw in raw_tool_calls:
-            function_block = raw.get("function") or {}
-            name = function_block.get("name")
-            if not isinstance(name, str) or not name:
-                logger.warning("Skipping tool call without name", extra={"tool": raw})
-                continue
-
-            # Check for concatenated tool names BEFORE parsing arguments
-            concatenated = _split_known_tools(name)
-            if len(concatenated) > 1:
-                logger.warning(
-                    "Tool call combined multiple tools",
-                    extra={"tool": name, "components": concatenated},
-                )
-                # Use a valid tool name in the error so the LLM understands
-                # Use the first detected tool name instead of the invalid concatenated name
-                parsed.append(
-                    _ToolCall(
-                        identifier=raw.get("id"),
-                        name=concatenated[0],  # Use first valid tool name
-                        arguments={
-                            "__invalid_arguments__": (
-                                f"CRITICAL ERROR: You attempted to call multiple tools in a single invocation. "
-                                f"The tool name '{name}' is invalid because it combines these tools: {', '.join(concatenated)}. "
-                                f"You MUST call each tool separately in its own tool invocation. "
-                                f"Make separate calls for: {' and '.join(concatenated)}."
-                            )
-                        },
-                    )
-                )
-                continue
-
-            arguments, error = self._parse_tool_arguments(function_block.get("arguments"))
-            if error:
-                logger.warning("Tool call arguments invalid", extra={"tool": name, "error": error})
-                parsed.append(
-                    _ToolCall(
-                        identifier=raw.get("id"),
-                        name=name,
-                        arguments={"__invalid_arguments__": error},
-                    )
-                )
-                continue
-
-            parsed.append(
-                _ToolCall(identifier=raw.get("id"), name=name, arguments=arguments)
-            )
-
-        return parsed
+        from .tools import _KNOWN_TOOL_NAMES
+        return parse_tool_calls(raw_tool_calls, _KNOWN_TOOL_NAMES)
 
     # Parse and validate tool arguments from various formats (dict, JSON string, etc.)
     def _parse_tool_arguments(
@@ -463,7 +407,7 @@ class InteractionAgentRuntime:
         return safe_json_load(raw_arguments)
 
     # Execute tool calls with error handling and logging, returning standardized results
-    def _execute_tool(self, tool_call: _ToolCall) -> ToolResult:
+    def _execute_tool(self, tool_call: ParsedToolCall) -> ToolResult:
         """Execute a tool call and convert low-level errors into structured results."""
 
         if "__invalid_arguments__" in tool_call.arguments:
@@ -474,10 +418,23 @@ class InteractionAgentRuntime:
         try:
             self._log_tool_invocation(tool_call, stage="start")
             result = handle_tool_call(tool_call.name, tool_call.arguments)
-        except Exception as exc:  # pragma: no cover - defensive
+        except ToolExecutionError as exc:
             logger.error(
-                "Tool execution crashed",
+                "Tool execution failed",
                 extra={"tool": tool_call.name, "error": str(exc)},
+                exc_info=True,
+            )
+            self._log_tool_invocation(
+                tool_call,
+                stage="error",
+                detail={"error": str(exc)},
+            )
+            return ToolResult(success=False, payload={"error": str(exc)})
+        except OpenPokeError as exc:
+            logger.error(
+                "Tool raised domain error",
+                extra={"tool": tool_call.name, "error": str(exc)},
+                exc_info=True,
             )
             self._log_tool_invocation(
                 tool_call,
@@ -507,29 +464,19 @@ class InteractionAgentRuntime:
         return result
 
     # Format tool execution results into JSON for LLM consumption
-    def _format_tool_result(self, tool_call: _ToolCall, result: ToolResult) -> str:
+    def _format_tool_result(self, tool_call: ParsedToolCall, result: ToolResult) -> str:
         """Render a tool execution result back to the LLM."""
-
-        payload: Dict[str, Any] = {
-            "tool": tool_call.name,
-            "status": "success" if result.success else "error",
-            "arguments": {
-                key: value
-                for key, value in tool_call.arguments.items()
-                if key != "__invalid_arguments__"
-            },
-        }
-
-        if result.payload is not None:
-            key = "result" if result.success else "error"
-            payload[key] = result.payload
-
-        return safe_json_dump(payload)
+        return format_tool_result(
+            tool_call.name,
+            result.success,
+            result.payload,
+            tool_call.arguments,
+        )
 
     # Log tool execution stages (start, done, error) with structured metadata
     def _log_tool_invocation(
         self,
-        tool_call: _ToolCall,
+        tool_call: ParsedToolCall,
         *,
         stage: str,
         result: Optional[ToolResult] = None,

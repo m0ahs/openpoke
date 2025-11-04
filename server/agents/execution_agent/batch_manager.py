@@ -10,7 +10,7 @@ from typing import Dict, List, Optional
 
 from .runtime import ExecutionAgentRuntime, ExecutionResult
 from ...logging_config import logger
-from ...utils.exceptions import AgentExecutionError, ToolExecutionError
+from ...utils.exceptions import AgentExecutionError, OpenPokeError, ToolExecutionError
 
 
 @dataclass
@@ -97,6 +97,18 @@ class ExecutionBatchManager:
                 agent_name=agent_name,
                 success=False,
                 response=f"Tool failure: {exc}",
+                error=str(exc),
+            )
+        except OpenPokeError as exc:
+            logger.error(
+                f"[{agent_name}] Execution raised domain error",
+                extra={"error": str(exc), "error_type": type(exc).__name__},
+                exc_info=True,
+            )
+            result = ExecutionResult(
+                agent_name=agent_name,
+                success=False,
+                response=f"Execution error: {exc}",
                 error=str(exc),
             )
         finally:
