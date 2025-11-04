@@ -223,10 +223,10 @@ def remove_agent(agent_name: str, clear_logs: bool = False) -> ToolResult:
 
 
 # Send immediate message to user and record in conversation history
-def send_message_to_user(message: str) -> ToolResult:
+async def send_message_to_user(message: str) -> ToolResult:
     """Record a user-visible reply in the conversation log."""
     log = get_conversation_log()
-    log.record_reply(message)
+    await log.record_reply(message)
 
     return ToolResult(
         success=True,
@@ -262,13 +262,13 @@ def send_draft(
 
 
 # Record silent wait state to avoid duplicate responses
-def wait(reason: str) -> ToolResult:
+async def wait(reason: str) -> ToolResult:
     """Wait silently and add a wait log entry that is not visible to the user."""
     log = get_conversation_log()
-    
+
     # Record a dedicated wait entry so the UI knows to ignore it
-    log.record_wait(reason)
-    
+    await log.record_wait(reason)
+
 
     return ToolResult(
         success=True,
@@ -287,7 +287,7 @@ def get_tool_schemas():
 
 
 # Route tool calls to appropriate handlers with argument validation and error handling
-def handle_tool_call(name: str, arguments: Any) -> ToolResult:
+async def handle_tool_call(name: str, arguments: Any) -> ToolResult:
     """Handle tool calls from interaction agent."""
     try:
         if isinstance(arguments, str):
@@ -300,11 +300,11 @@ def handle_tool_call(name: str, arguments: Any) -> ToolResult:
         if name == "send_message_to_agent":
             return send_message_to_agent(**args)
         if name == "send_message_to_user":
-            return send_message_to_user(**args)
+            return await send_message_to_user(**args)
         if name == "send_draft":
             return send_draft(**args)
         if name == "wait":
-            return wait(**args)
+            return await wait(**args)
         if name == "remove_agent":
             return remove_agent(**args)
 

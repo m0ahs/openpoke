@@ -320,7 +320,7 @@ class InteractionAgentRuntime:
                     if isinstance(agent_name, str) and agent_name:
                         summary.execution_agents.add(agent_name)
 
-                result = self._execute_tool(tool_call)
+                result = await self._execute_tool(tool_call)
 
                 if result.user_message:
                     summary.user_messages.append(result.user_message)
@@ -407,7 +407,7 @@ class InteractionAgentRuntime:
         return safe_json_load(raw_arguments)
 
     # Execute tool calls with error handling and logging, returning standardized results
-    def _execute_tool(self, tool_call: ParsedToolCall) -> ToolResult:
+    async def _execute_tool(self, tool_call: ParsedToolCall) -> ToolResult:
         """Execute a tool call and convert low-level errors into structured results."""
 
         if "__invalid_arguments__" in tool_call.arguments:
@@ -417,7 +417,7 @@ class InteractionAgentRuntime:
 
         try:
             self._log_tool_invocation(tool_call, stage="start")
-            result = handle_tool_call(tool_call.name, tool_call.arguments)
+            result = await handle_tool_call(tool_call.name, tool_call.arguments)
         except ToolExecutionError as exc:
             logger.error(
                 "Tool execution failed",
