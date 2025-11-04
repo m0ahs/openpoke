@@ -79,23 +79,6 @@ class TriggerScheduler:
         before_iso = to_storage_timestamp(look_ahead)
         logger.info(f"Looking for triggers due before: {before_iso}")
 
-        # Debug: Log all triggers for the Rappels personnels agent
-        all_triggers = []
-        try:
-            all_triggers = self._service.list_triggers(agent_name="Rappels personnels")
-        except Exception as e:
-            logger.warning(f"Could not list triggers: {e}")
-
-        logger.info(
-            f"Found {len(due_triggers)} due triggers, {len(all_triggers)} total triggers for Rappels personnels"
-        )
-
-        # Log details of each trigger
-        for trigger in all_triggers:
-            logger.info(
-                f"Trigger {trigger.id}: next_trigger={trigger.next_trigger}, status={trigger.status}, payload='{trigger.payload[:30]}...'"
-            )
-
         if not due_triggers:
             return
 
