@@ -111,6 +111,17 @@ class InteractionAgentRuntime:
                     execution_agents_used=1,
                 )
 
+        # Special handling for reminder creation confirmations
+        if self._is_reminder_creation(agent_message):
+            creation_message = self._format_reminder_creation_message(agent_message)
+            if creation_message:
+                self.conversation_log.record_reply(creation_message)
+                return InteractionResult(
+                    success=True,
+                    response=creation_message,
+                    execution_agents_used=1,
+                )
+
         try:
             transcript_before = self._load_conversation_transcript()
             self.conversation_log.record_agent_message(agent_message)
@@ -458,3 +469,40 @@ class InteractionAgentRuntime:
                     reminder_text = reminder_text[2:]
                 return reminder_text
         return None
+
+    def _is_reminder_creation(self, agent_message: str) -> bool:
+        """Check if the agent message is about creating a reminder."""
+        return (
+            "Rappels personnels" in agent_message and
+            ("rappel" in agent_message.lower() or "reminder" in agent_message.lower()) and
+            ("créé" in agent_message.lower() or "created" in agent_message.lower() or "programmé" in agent_message.lower())
+        )
+
+    def _format_reminder_creation_message(self, agent_message: str) -> Optional[str]:
+        """Format a concise confirmation message for reminder creation."""
+        # Extract key information from the agent message
+        if "RAPPEL CRÉÉ" in agent_message or "rappel créé" in agent_message.lower():
+            # Try to extract the reminder content and time
+            lines = agent_message.split('\n')
+            reminder_content = ""
+            trigger_time = ""
+            
+            for line in lines:
+                if "Titre" in line and ":" in line:
+                    # Extract title
+                    parts = line.split(":", 1)
+                    if len(parts) > 1:
+                        reminder_content = parts[1].strip().strip('"')
+                elif "Heure de déclenchement" in line and ":" in line:
+                    # Extract time
+                    parts = line.split(":", 1)
+                    if len(parts) > 1:
+                        trigger_time = parts[1].strip()
+            
+            if reminder_content and trigger_time:
+                return f"✅ Rappel créé : \"{reminder_content}\" pour {trigger_time}"
+            elif reminder_content:
+                return f"✅ Rappel créé : \"{reminder_content}\""
+        
+        # Fallback: simple confirmation
+        return "✅ Rappel créé avec succès"
