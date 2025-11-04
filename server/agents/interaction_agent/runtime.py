@@ -18,7 +18,7 @@ from ...services.conversation import (
 from ...openrouter_client import request_chat_completion
 from ...logging_config import logger
 from ...utils.exceptions import AgentExecutionError, OpenPokeError, ToolExecutionError
-from ...utils.json_utils import safe_json_dump, safe_json_load
+from ...utils.json_utils import safe_json_dump
 
 
 @dataclass

@@ -8,6 +8,7 @@ from typing import Any, Optional
 from ...logging_config import logger
 from ...services.conversation import get_conversation_log
 from ...services.execution import get_agent_roster, get_execution_agent_logs
+from ...utils.tool_validation import get_interaction_tool_names
 from ..execution_agent.batch_manager import ExecutionBatchManager
 
 
@@ -19,6 +20,8 @@ class ToolResult:
     payload: Any = None
     user_message: Optional[str] = None
     recorded_reply: bool = False
+
+_KNOWN_TOOL_NAMES = get_interaction_tool_names()
 
 TOOL_SCHEMAS = [
     {
