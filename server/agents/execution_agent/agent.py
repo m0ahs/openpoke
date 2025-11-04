@@ -115,6 +115,16 @@ class ExecutionAgent:
             agent_purpose=agent_purpose
         )
         
+        # Add specific instructions for reminder agents
+        instructions_section = self._get_agent_specific_instructions()
+        
+        # Replace the instructions placeholder
+        if "[TO BE FILLED IN BY USER - Add your specific instructions here]" in base_prompt:
+            base_prompt = base_prompt.replace(
+                "[TO BE FILLED IN BY USER - Add your specific instructions here]",
+                instructions_section
+            )
+        
         # Replace the static Available Tools section with dynamic one
         if "# Available Tools" in base_prompt:
             # Find the start and end of the Available Tools section
@@ -132,6 +142,23 @@ class ExecutionAgent:
                 )
 
         return base_prompt
+
+    def _get_agent_specific_instructions(self) -> str:
+        """Get agent-specific instructions based on the agent name."""
+        agent_name_lower = self.name.lower()
+        
+        # Special instructions for reminder agents
+        if "rappel" in agent_name_lower or "remind" in agent_name_lower or "reminder" in agent_name_lower:
+            return """When you receive a trigger firing notification with reminder content in the payload:
+1. Simply acknowledge the reminder by returning the payload text as your final response
+2. Do not try to create new triggers, use tools, or perform any other actions
+3. Your response should be the reminder text that will be shown to the user
+4. Keep your response clear and concise - just the reminder content
+
+Example: If the payload is "Rappel: Réunion équipe à 14h", respond with "Rappel: Réunion équipe à 14h"."""
+        
+        # Default instructions for other agents
+        return """Follow the user's instructions carefully. Use available tools when needed to complete tasks. Provide clear, helpful responses."""
 
     # Combine base system prompt with conversation history, applying conversation limits
     def build_system_prompt_with_history(self) -> str:
