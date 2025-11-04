@@ -63,7 +63,7 @@ class Settings(BaseModel):
     interaction_agent_model: str = Field(default=_alyn_model)
     execution_agent_model: str = Field(default=_alyn_model)
     execution_agent_search_model: str = Field(default=_alyn_model)
-    summarizer_model: str = Field(default=_alyn_model)
+    summarizer_model: str = Field(default=os.getenv("SUMMARIZER_MODEL", "minimax/minimax-m2:free"))
     email_classifier_model: str = Field(default=_alyn_model)
 
     # Credentials / integrations

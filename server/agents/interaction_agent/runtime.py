@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set
 
 from .agent import build_system_prompt, prepare_message_with_history
-from .tools import ToolResult, get_tool_schemas, handle_tool_call, _split_known_tools
+from .tools import ToolResult, get_tool_schemas, handle_tool_call
 from .reminder_parser import ReminderMessageParser, ReminderMessageType
 from ..tool_parsing import parse_tool_calls, ParsedToolCall
 from ..tool_formatting import format_tool_result
@@ -398,13 +398,6 @@ class InteractionAgentRuntime:
         """Normalize tool call payloads from the LLM."""
         from .tools import _KNOWN_TOOL_NAMES
         return parse_tool_calls(raw_tool_calls, _KNOWN_TOOL_NAMES)
-
-    # Parse and validate tool arguments from various formats (dict, JSON string, etc.)
-    def _parse_tool_arguments(
-        self, raw_arguments: Any
-    ) -> tuple[Dict[str, Any], Optional[str]]:
-        """Convert tool arguments into a dictionary, reporting errors."""
-        return safe_json_load(raw_arguments)
 
     # Execute tool calls with error handling and logging, returning standardized results
     async def _execute_tool(self, tool_call: ParsedToolCall) -> ToolResult:

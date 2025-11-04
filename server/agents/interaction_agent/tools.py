@@ -3,15 +3,11 @@
 import asyncio
 import json
 from dataclasses import dataclass
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 from ...logging_config import logger
 from ...services.conversation import get_conversation_log
 from ...services.execution import get_agent_roster, get_execution_agent_logs
-from ...utils.tool_validation import (
-    get_interaction_tool_names,
-    split_known_tools as _split_known_tools_impl,
-)
 from ..execution_agent.batch_manager import ExecutionBatchManager
 
 
@@ -23,18 +19,6 @@ class ToolResult:
     payload: Any = None
     user_message: Optional[str] = None
     recorded_reply: bool = False
-
-# Tool schemas for OpenRouter
-_KNOWN_TOOL_NAMES = get_interaction_tool_names()
-
-
-def _split_known_tools(name: str) -> List[str]:
-    """
-    Attempt to split a concatenated tool name into known tool identifiers.
-
-    Wrapper around the shared utility function for backward compatibility.
-    """
-    return _split_known_tools_impl(name, _KNOWN_TOOL_NAMES)
 
 TOOL_SCHEMAS = [
     {
@@ -237,7 +221,7 @@ async def send_message_to_user(message: str) -> ToolResult:
 
 
 # Format and record email draft for user review
-def send_draft(
+async def send_draft(
     to: str,
     subject: str,
     body: str,
@@ -247,7 +231,7 @@ def send_draft(
 
     message = f"To: {to}\nSubject: {subject}\n\n{body}"
 
-    log.record_reply(message)
+    await log.record_reply(message)
     logger.info(f"Draft recorded for: {to}")
 
     return ToolResult(
@@ -302,7 +286,7 @@ async def handle_tool_call(name: str, arguments: Any) -> ToolResult:
         if name == "send_message_to_user":
             return await send_message_to_user(**args)
         if name == "send_draft":
-            return send_draft(**args)
+            return await send_draft(**args)
         if name == "wait":
             return await wait(**args)
         if name == "remove_agent":
