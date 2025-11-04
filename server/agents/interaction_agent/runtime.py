@@ -288,18 +288,42 @@ class InteractionAgentRuntime:
     ) -> _LoopSummary:
         """Iteratively query the LLM until it issues a final response."""
 
+        logger.debug("Starting interaction loop", extra={"initial_messages": len(messages)})
+        
         summary = _LoopSummary()
 
         for iteration in range(self.MAX_TOOL_ITERATIONS):
+            logger.debug(
+                "Interaction loop iteration",
+                extra={
+                    "iteration": iteration + 1,
+                    "messages_count": len(messages),
+                    "has_system_prompt": bool(system_prompt),
+                }
+            )
+            
             response = await self._make_llm_call(system_prompt, messages)
             assistant_message = self._extract_assistant_message(response)
 
             assistant_content = (assistant_message.get("content") or "").strip()
             if assistant_content:
                 summary.last_assistant_text = assistant_content
+                logger.debug(
+                    "Assistant content extracted",
+                    extra={"content_length": len(assistant_content)}
+                )
 
             raw_tool_calls = assistant_message.get("tool_calls") or []
             parsed_tool_calls = self._parse_tool_calls(raw_tool_calls)
+            
+            logger.debug(
+                "Tool calls parsed",
+                extra={
+                    "raw_tool_calls": len(raw_tool_calls),
+                    "parsed_tool_calls": len(parsed_tool_calls),
+                    "tool_names": [tc.name for tc in parsed_tool_calls],
+                }
+            )
 
             assistant_entry: Dict[str, Any] = {
                 "role": "assistant",
@@ -320,7 +344,26 @@ class InteractionAgentRuntime:
                     if isinstance(agent_name, str) and agent_name:
                         summary.execution_agents.add(agent_name)
 
+                logger.debug(
+                    "Executing tool",
+                    extra={
+                        "tool_name": tool_call.name,
+                        "has_arguments": bool(tool_call.arguments),
+                    }
+                )
+                
                 result = await self._execute_tool(tool_call)
+
+                logger.debug(
+                    "Tool execution result",
+                    extra={
+                        "tool_name": tool_call.name,
+                        "success": result.success,
+                        "has_user_message": bool(result.user_message),
+                        "user_message_length": len(result.user_message) if result.user_message else 0,
+                        "recorded_reply": result.recorded_reply,
+                    }
+                )
 
                 if result.user_message:
                     summary.user_messages.append(result.user_message)
@@ -334,8 +377,29 @@ class InteractionAgentRuntime:
         else:
             raise RuntimeError("Reached tool iteration limit without final response")
 
+        logger.debug(
+            "Interaction loop completed",
+            extra={
+                "total_iterations": iteration + 1,
+                "final_assistant_content": bool(summary.last_assistant_text),
+                "user_messages_produced": len(summary.user_messages),
+                "tools_executed": len(summary.tool_names),
+                "agents_used": len(summary.execution_agents),
+            }
+        )
+
         if not summary.user_messages and not summary.last_assistant_text:
-            logger.warning("Interaction loop exited without assistant content")
+            logger.warning(
+                "Interaction loop exited without assistant content",
+                extra={
+                    "iterations": iteration + 1,
+                    "tool_calls_executed": len(summary.tool_names),
+                    "execution_agents_used": len(summary.execution_agents),
+                    "has_assistant_content": bool(summary.last_assistant_text),
+                    "user_messages_count": len(summary.user_messages),
+                    "tool_names": summary.tool_names,
+                }
+            )
 
         return summary
 
