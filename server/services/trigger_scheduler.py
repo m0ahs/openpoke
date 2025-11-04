@@ -93,8 +93,8 @@ class TriggerScheduler:
         """
         logger.debug("Starting trigger poll")
         now = _utc_now()
-        # Look for triggers due in the next 30 seconds to account for polling interval
-        look_ahead = now + timedelta(seconds=30)
+        # Look ahead by poll interval + buffer to account for scheduling delays
+        look_ahead = now + timedelta(seconds=self._poll_interval + 5)
         due_triggers = self._service.get_due_triggers(before=look_ahead)
 
         # Debug: Log the before timestamp
@@ -114,9 +114,9 @@ class TriggerScheduler:
                     )
                     continue
 
-                # Only execute if actually due (within 5 seconds of now)
+                # Only execute if actually due (within poll interval of now)
                 next_fire = parse_iso(trigger.next_trigger) if trigger.next_trigger else None
-                if next_fire and (next_fire - now) > timedelta(seconds=5):
+                if next_fire and (next_fire - now) > timedelta(seconds=self._poll_interval):
                     logger.debug(
                         "Trigger not yet due",
                         extra={

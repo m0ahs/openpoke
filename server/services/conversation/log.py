@@ -14,7 +14,7 @@ from ...utils.timezones import now_in_user_timezone
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - used for type checkers only
-    from .summarization import WorkingMemoryLog
+    from .summarization.working_memory_log import WorkingMemoryLog
 
 
 _DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
@@ -237,7 +237,7 @@ class ConversationLog:
             try:
                 if self._path.exists():
                     self._path.unlink()
-            except Exception as exc:  # pragma: no cover - defensive
+            except OSError as exc:  # pragma: no cover - defensive
                 logger.warning(
                     "conversation log clear failed", extra={"error": str(exc), "path": str(self._path)}
                 )
@@ -245,9 +245,14 @@ class ConversationLog:
                 self._ensure_directory()
         try:
             self._working_memory_log.clear()
-        except Exception as exc:  # pragma: no cover - defensive
+        except (RuntimeError, ConversationLogError) as exc:  # pragma: no cover - defensive
             logger.debug(
                 "working memory clear skipped",
+                extra={"error": str(exc)},
+            )
+        except OSError as exc:  # pragma: no cover - defensive
+            logger.debug(
+                "working memory clear encountered I/O error",
                 extra={"error": str(exc)},
             )
 

@@ -15,7 +15,7 @@ from ...services.conversation import (
 )
 from ...openrouter_client import request_chat_completion
 from ...logging_config import logger
-from ...utils.exceptions import AgentExecutionError, ToolExecutionError
+from ...utils.exceptions import AgentExecutionError, OpenPokeError, ToolExecutionError
 from ...utils.json_utils import safe_json_dump, safe_json_load
 
 
@@ -156,17 +156,16 @@ class InteractionAgentRuntime:
                 response="",
                 error=str(exc),
             )
-        except Exception as exc:
-            # Handle unexpected errors with full logging
+        except OpenPokeError as exc:
             logger.error(
-                "Interaction agent unexpected error",
+                "Interaction agent unexpected domain error",
                 extra={"error": str(exc), "error_type": type(exc).__name__},
-                exc_info=True
+                exc_info=True,
             )
             return InteractionResult(
                 success=False,
                 response="",
-                error=f"Unexpected error: {str(exc)}",
+                error=str(exc),
             )
 
     # Handle incoming messages from execution agents and generate appropriate responses
@@ -276,17 +275,16 @@ class InteractionAgentRuntime:
                 response="",
                 error=str(exc),
             )
-        except Exception as exc:
-            # Handle unexpected errors with full logging
+        except OpenPokeError as exc:
             logger.error(
-                "Interaction agent (agent message) unexpected error",
+                "Interaction agent (agent message) unexpected domain error",
                 extra={"error": str(exc), "error_type": type(exc).__name__},
-                exc_info=True
+                exc_info=True,
             )
             return InteractionResult(
                 success=False,
                 response="",
-                error=f"Unexpected error: {str(exc)}",
+                error=str(exc),
             )
 
     # Core interaction loop that handles LLM calls and tool executions until completion
