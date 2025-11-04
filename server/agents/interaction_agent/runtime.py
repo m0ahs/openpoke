@@ -1,5 +1,6 @@
 """Interaction Agent Runtime - handles LLM calls for user and agent turns."""
 
+import json
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set
 
@@ -95,8 +96,8 @@ class InteractionAgentRuntime:
             )
 
         try:
-            transcript_before = self._load_conversation_transcript()
-            self.conversation_log.record_user_message(user_message)
+            transcript_before = await self._load_conversation_transcript()
+            await self.conversation_log.record_user_message(user_message)
 
             system_prompt = build_system_prompt()
             messages = prepare_message_with_history(
@@ -108,8 +109,12 @@ class InteractionAgentRuntime:
 
             final_response = self._finalize_response(summary)
 
-            if final_response and not summary.user_messages:
-                self.conversation_log.record_reply(final_response)
+            if final_response:
+                if self._should_emit_assistant_reply(final_response):
+                    if not summary.user_messages:
+                        await self.conversation_log.record_reply(final_response)
+                else:
+                    final_response = ""
 
             return InteractionResult(
                 success=True,
@@ -117,17 +122,6 @@ class InteractionAgentRuntime:
                 execution_agents_used=len(summary.execution_agents),
             )
 
-        except (ValueError, KeyError, TypeError) as exc:
-            # Handle expected data validation errors
-            logger.warning(
-                "Interaction agent data validation error",
-                extra={"error": str(exc), "error_type": type(exc).__name__}
-            )
-            return InteractionResult(
-                success=False,
-                response="",
-                error=f"Invalid data: {str(exc)}",
-            )
         except json.JSONDecodeError as exc:
             # Handle JSON parsing errors
             logger.warning(
@@ -138,6 +132,17 @@ class InteractionAgentRuntime:
                 success=False,
                 response="",
                 error=f"JSON parsing failed: {str(exc)}",
+            )
+        except (ValueError, KeyError, TypeError) as exc:
+            # Handle expected data validation errors
+            logger.warning(
+                "Interaction agent data validation error",
+                extra={"error": str(exc), "error_type": type(exc).__name__}
+            )
+            return InteractionResult(
+                success=False,
+                response="",
+                error=f"Invalid data: {str(exc)}",
             )
         except AgentExecutionError as exc:
             # Handle agent-specific errors
@@ -171,8 +176,8 @@ class InteractionAgentRuntime:
         logger.info(f"Interaction agent received agent message: {agent_message[:100]}...")
 
         # Check for duplicate agent messages using DuplicateDetector
-        agent_msg_dict = {"role": "assistant", "content": agent_message}
-        if self.duplicate_detector.check_and_mark(agent_msg_dict, role="assistant"):
+        agent_msg_dict = {"role": "execution_agent", "content": agent_message}
+        if self.duplicate_detector.check_and_mark(agent_msg_dict, role="execution_agent"):
             logger.info("Duplicate agent message detected, skipping processing")
             return InteractionResult(
                 success=True,
@@ -185,7 +190,7 @@ class InteractionAgentRuntime:
 
         if parsed_reminder.message_type == ReminderMessageType.NOTIFICATION:
             reminder_text = self.reminder_parser.format_notification(parsed_reminder)
-            self.conversation_log.record_reply(reminder_text)
+            await self.conversation_log.record_reply(reminder_text)
             return InteractionResult(
                 success=True,
                 response=reminder_text,
@@ -194,7 +199,7 @@ class InteractionAgentRuntime:
 
         if parsed_reminder.message_type == ReminderMessageType.CREATION:
             creation_message = self.reminder_parser.format_creation(parsed_reminder)
-            self.conversation_log.record_reply(creation_message)
+            await self.conversation_log.record_reply(creation_message)
             return InteractionResult(
                 success=True,
                 response=creation_message,
@@ -203,7 +208,7 @@ class InteractionAgentRuntime:
 
         if parsed_reminder.message_type == ReminderMessageType.GENERAL:
             response = self.reminder_parser.format_general(parsed_reminder)
-            self.conversation_log.record_reply(response)
+            await self.conversation_log.record_reply(response)
             return InteractionResult(
                 success=True,
                 response=response,
@@ -211,8 +216,8 @@ class InteractionAgentRuntime:
             )
 
         try:
-            transcript_before = self._load_conversation_transcript()
-            self.conversation_log.record_agent_message(agent_message)
+            transcript_before = await self._load_conversation_transcript()
+            await self.conversation_log.record_agent_message(agent_message)
 
             system_prompt = build_system_prompt()
             messages = prepare_message_with_history(
@@ -224,8 +229,12 @@ class InteractionAgentRuntime:
 
             final_response = self._finalize_response(summary)
 
-            if final_response and not summary.user_messages:
-                self.conversation_log.record_reply(final_response)
+            if final_response:
+                if self._should_emit_assistant_reply(final_response):
+                    if not summary.user_messages:
+                        await self.conversation_log.record_reply(final_response)
+                else:
+                    final_response = ""
 
             return InteractionResult(
                 success=True,
@@ -233,17 +242,6 @@ class InteractionAgentRuntime:
                 execution_agents_used=len(summary.execution_agents),
             )
 
-        except (ValueError, KeyError, TypeError) as exc:
-            # Handle expected data validation errors
-            logger.warning(
-                "Interaction agent (agent message) data validation error",
-                extra={"error": str(exc), "error_type": type(exc).__name__}
-            )
-            return InteractionResult(
-                success=False,
-                response="",
-                error=f"Invalid data: {str(exc)}",
-            )
         except json.JSONDecodeError as exc:
             # Handle JSON parsing errors
             logger.warning(
@@ -254,6 +252,17 @@ class InteractionAgentRuntime:
                 success=False,
                 response="",
                 error=f"JSON parsing failed: {str(exc)}",
+            )
+        except (ValueError, KeyError, TypeError) as exc:
+            # Handle expected data validation errors
+            logger.warning(
+                "Interaction agent (agent message) data validation error",
+                extra={"error": str(exc), "error_type": type(exc).__name__}
+            )
+            return InteractionResult(
+                success=False,
+                response="",
+                error=f"Invalid data: {str(exc)}",
             )
         except AgentExecutionError as exc:
             # Handle agent-specific errors
@@ -339,13 +348,29 @@ class InteractionAgentRuntime:
 
         return summary
 
+    def _should_emit_assistant_reply(self, reply: str) -> bool:
+        """Return True if reply is non-empty and not a recent duplicate."""
+
+        if not reply.strip():
+            return False
+
+        candidate = {"role": "assistant", "content": reply}
+        if self.duplicate_detector.check_and_mark(candidate, role="assistant"):
+            logger.warning(
+                "Duplicate assistant reply detected",
+                extra={"content_preview": reply[:160]},
+            )
+            return False
+
+        return True
+
     # Load conversation history, preferring summarized version if available
-    def _load_conversation_transcript(self) -> str:
+    async def _load_conversation_transcript(self) -> str:
         if self.settings.summarization_enabled:
             rendered = self.working_memory_log.render_transcript()
             if rendered.strip():
                 return rendered
-        return self.conversation_log.load_transcript()
+        return await self.conversation_log.load_transcript()
 
     # Execute API call to OpenRouter with system prompt, messages, and tool schemas
     async def _make_llm_call(

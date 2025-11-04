@@ -54,8 +54,8 @@ class ExecutionAgentRuntime:
             messages = [{"role": "user", "content": instructions}]
             tools_executed: List[str] = []
             final_response: Optional[str] = None
-            plan_signatures: Dict[str, int] = {}
-            executed_tool_signatures: set[str] = set()
+            plan_signatures: Dict[Tuple[str, Tuple[Tuple[str, Any], ...]], int] = {}
+            executed_tool_signatures: set[Tuple[str, Any]] = set()
             stop_requested = False
 
             for iteration in range(self.MAX_TOOL_ITERATIONS):
@@ -87,16 +87,9 @@ class ExecutionAgentRuntime:
                     assistant_entry["tool_calls"] = raw_tool_calls
                 messages.append(assistant_entry)
 
-                plan_signature = safe_json_dump({
-                    "content": assistant_entry["content"].strip(),
-                    "tools": [
-                        {
-                            "name": call.get("name"),
-                            "arguments": call.get("arguments"),
-                        }
-                        for call in parsed_tool_calls
-                    ],
-                })
+                plan_signature = self._build_plan_signature( # type: ignore
+                    assistant_entry["content"], parsed_tool_calls
+                )
 
                 if plan_signature:
                     plan_signatures[plan_signature] = plan_signatures.get(plan_signature, 0) + 1
@@ -147,10 +140,7 @@ class ExecutionAgentRuntime:
                         messages.append(tool_message)
                         continue
 
-                    tool_signature = safe_json_dump({
-                        "name": tool_name,
-                        "arguments": tool_args,
-                    })
+                    tool_signature = self._build_tool_signature(tool_name, tool_args)
 
                     if tool_signature in executed_tool_signatures:
                         logger.info(
@@ -359,6 +349,41 @@ class ExecutionAgentRuntime:
             })
 
         return tool_calls
+
+    @staticmethod
+    def _freeze_for_signature(value: Any) -> Any:
+        if isinstance(value, dict):
+            return tuple(
+                sorted(
+                    (key, ExecutionAgentRuntime._freeze_for_signature(val))
+                    for key, val in value.items()
+                )
+            )
+        if isinstance(value, (list, tuple)):
+            return tuple(ExecutionAgentRuntime._freeze_for_signature(item) for item in value)
+        if isinstance(value, set):
+            return tuple(
+                sorted(ExecutionAgentRuntime._freeze_for_signature(item) for item in value)
+            )
+        return value
+
+    def _build_plan_signature(
+        self,
+        content: str,
+        tool_calls: List[Dict[str, Any]],
+    ) -> Tuple[str, Tuple[Tuple[str, Any], ...]]:
+        normalized_content = (content or "").strip()
+        frozen_tools = tuple(
+            (
+                call.get("name", ""),
+                self._freeze_for_signature(call.get("arguments")),
+            )
+            for call in tool_calls
+        )
+        return normalized_content, frozen_tools
+
+    def _build_tool_signature(self, name: str, arguments: Dict[str, Any]) -> Tuple[str, Any]:
+        return name, self._freeze_for_signature(arguments or {})
 
     # Format tool execution results into JSON structure for LLM consumption
     def _format_tool_result(

@@ -14,6 +14,20 @@ def test_split_detects_two_concatenated_tools():
     ]
 
 
+def test_split_detects_tools_separated_by_delimiters():
+    known = {"gmail_send_email", "calendar_create_event"}
+    for candidate in [
+        "gmail_send_email calendar_create_event",
+        "gmail_send_email-calendar_create_event",
+        "gmail_send_email+calendar_create_event",
+        "gmail_send_email_calendar_create_event",
+    ]:
+        assert split_known_tools(candidate, known) == [
+            "gmail_send_email",
+            "calendar_create_event",
+        ]
+
+
 def test_split_returns_empty_when_no_match():
     known = {"gmail_send_email"}
     assert split_known_tools("gmailsendemail", known) == []

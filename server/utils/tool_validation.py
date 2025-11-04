@@ -1,6 +1,7 @@
 """Shared tool validation utilities for agents."""
 
-from typing import List, Set
+from functools import lru_cache
+from typing import List, Optional, Set, Tuple
 
 
 def split_known_tools(name: str, known_tools: Set[str]) -> List[str]:
@@ -15,8 +16,8 @@ def split_known_tools(name: str, known_tools: Set[str]) -> List[str]:
         known_tools: Set of valid tool names to match against
 
     Returns:
-        List of individual tool names if the input is a concatenation,
-        empty list if no valid split is found
+    List of individual tool names if the input is a concatenation,
+    empty list if no valid split is found or the input is a single tool
 
     Examples:
         >>> split_known_tools("send_message_to_agentsend_draft",
@@ -27,18 +28,36 @@ def split_known_tools(name: str, known_tools: Set[str]) -> List[str]:
         ...                   {"gmail_send_email"})
         []  # Single valid tool, not a concatenation
     """
-    remaining = name
-    result: List[str] = []
-    sorted_tools = sorted(known_tools, key=len, reverse=True)
 
-    while remaining:
-        match = next((tool for tool in sorted_tools if remaining.startswith(tool)), None)
-        if match is None:
-            return []
-        result.append(match)
-        remaining = remaining[len(match):]
+    separators = {"_", " ", "-", "+"}
+    sorted_tools = tuple(sorted(known_tools, key=len, reverse=True))
 
-    return result
+    @lru_cache(maxsize=None)
+    def _split_from(index: int) -> Optional[Tuple[str, ...]]:
+        if index >= len(name):
+            return tuple()
+
+        # Allow separators only between tools, not at the very start
+        current = index
+        if current > 0:
+            while current < len(name) and name[current] in separators:
+                current += 1
+            if current >= len(name):
+                return tuple()
+
+        for candidate in sorted_tools:
+            if name.startswith(candidate, current):
+                remainder = _split_from(current + len(candidate))
+                if remainder is not None:
+                    return (candidate,) + remainder
+
+        return None
+
+    components = _split_from(0)
+    if not components or len(components) <= 1:
+        return []
+
+    return list(components)
 
 
 def get_interaction_tool_names() -> Set[str]:
