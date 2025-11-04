@@ -8,6 +8,10 @@ from typing import Any, List, Optional
 from ...logging_config import logger
 from ...services.conversation import get_conversation_log
 from ...services.execution import get_agent_roster, get_execution_agent_logs
+from ...utils.tool_validation import (
+    get_interaction_tool_names,
+    split_known_tools as _split_known_tools_impl,
+)
 from ..execution_agent.batch_manager import ExecutionBatchManager
 
 
@@ -21,30 +25,16 @@ class ToolResult:
     recorded_reply: bool = False
 
 # Tool schemas for OpenRouter
-_KNOWN_TOOL_NAMES = {
-    "send_message_to_agent",
-    "send_message_to_user",
-    "send_draft",
-    "wait",
-    "remove_agent",
-}
+_KNOWN_TOOL_NAMES = get_interaction_tool_names()
 
 
 def _split_known_tools(name: str) -> List[str]:
-    """Attempt to split a concatenated tool name into known tool identifiers."""
+    """
+    Attempt to split a concatenated tool name into known tool identifiers.
 
-    remaining = name
-    result: List[str] = []
-    sorted_tools = sorted(_KNOWN_TOOL_NAMES, key=len, reverse=True)
-
-    while remaining:
-        match = next((tool for tool in sorted_tools if remaining.startswith(tool)), None)
-        if match is None:
-            return []
-        result.append(match)
-        remaining = remaining[len(match) :]
-
-    return result
+    Wrapper around the shared utility function for backward compatibility.
+    """
+    return _split_known_tools_impl(name, _KNOWN_TOOL_NAMES)
 
 TOOL_SCHEMAS = [
     {

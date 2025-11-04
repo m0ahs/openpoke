@@ -9,6 +9,7 @@ from typing import Optional, Set
 from ..agents.execution_agent.batch_manager import ExecutionBatchManager
 from ..agents.execution_agent.runtime import ExecutionResult
 from ..logging_config import logger
+from ..utils.exceptions import TriggerSchedulingError
 from .triggers import TriggerRecord, get_trigger_service
 from .triggers.utils import parse_iso, to_storage_timestamp
 
@@ -25,7 +26,13 @@ def _isoformat(dt: datetime) -> str:
 
 
 class TriggerScheduler:
-    """Polls stored triggers and launches execution agents when due."""
+    """Polls stored triggers and launches execution agents when due.
+
+    Thread-safety: This class is async-safe with proper lock coordination:
+    - _lock protects start/stop operations and _running flag
+    - _in_flight_lock protects the _in_flight set from concurrent access
+    - All _in_flight access must be guarded by _in_flight_lock
+    """
 
     def __init__(self, poll_interval_seconds: float = 10.0) -> None:
         self._poll_interval = poll_interval_seconds
@@ -33,7 +40,9 @@ class TriggerScheduler:
         self._task: Optional[asyncio.Task[None]] = None
         self._running = False
         self._in_flight: Set[int] = set()
-        self._lock = asyncio.Lock()
+        # Separate locks for different concerns to avoid deadlocks
+        self._lock = asyncio.Lock()  # Protects start/stop operations
+        self._in_flight_lock = asyncio.Lock()  # Protects _in_flight set
 
     async def start(self) -> None:
         async with self._lock:
@@ -60,7 +69,7 @@ class TriggerScheduler:
         logger.info("Trigger scheduler loop starting")
         try:
             while self._running:
-                logger.info("Trigger scheduler polling cycle")
+                logger.debug("Trigger scheduler polling cycle")
                 await self._poll_once()
                 await asyncio.sleep(self._poll_interval)
         except asyncio.CancelledError:  # pragma: no cover - shutdown path
@@ -69,7 +78,12 @@ class TriggerScheduler:
             logger.exception("Trigger scheduler loop crashed", extra={"error": str(exc)})
 
     async def _poll_once(self) -> None:
-        logger.info("Starting trigger poll")
+        """Poll for due triggers and schedule execution.
+
+        Thread-safety: Acquires _in_flight_lock when checking/modifying _in_flight set
+        to prevent race conditions with concurrent trigger executions.
+        """
+        logger.debug("Starting trigger poll")
         now = _utc_now()
         # Look for triggers due in the next 30 seconds to account for polling interval
         look_ahead = now + timedelta(seconds=30)
@@ -77,38 +91,49 @@ class TriggerScheduler:
 
         # Debug: Log the before timestamp
         before_iso = to_storage_timestamp(look_ahead)
-        logger.info(f"Looking for triggers due before: {before_iso}")
+        logger.debug("Looking for triggers due before", extra={"before": before_iso})
 
         if not due_triggers:
             return
 
         for trigger in due_triggers:
-            if trigger.id in self._in_flight:
-                logger.info(
-                    "Trigger already in flight",
-                    extra={"trigger_id": trigger.id, "agent": trigger.agent_name}
-                )
-                continue
+            # Check if already in flight (with lock protection)
+            async with self._in_flight_lock:
+                if trigger.id in self._in_flight:
+                    logger.debug(
+                        "Trigger already in flight",
+                        extra={"trigger_id": trigger.id, "agent": trigger.agent_name}
+                    )
+                    continue
 
-            # Only execute if actually due (within 5 seconds of now)
-            next_fire = parse_iso(trigger.next_trigger) if trigger.next_trigger else None
-            if next_fire and (next_fire - now) > timedelta(seconds=5):
-                logger.info(
-                    "Trigger not yet due",
-                    extra={
-                        "trigger_id": trigger.id,
-                        "next_fire": trigger.next_trigger,
-                        "seconds_until_due": (next_fire - now).total_seconds()
-                    }
-                )
-                continue
+                # Only execute if actually due (within 5 seconds of now)
+                next_fire = parse_iso(trigger.next_trigger) if trigger.next_trigger else None
+                if next_fire and (next_fire - now) > timedelta(seconds=5):
+                    logger.debug(
+                        "Trigger not yet due",
+                        extra={
+                            "trigger_id": trigger.id,
+                            "next_fire": trigger.next_trigger,
+                            "seconds_until_due": (next_fire - now).total_seconds()
+                        }
+                    )
+                    continue
 
-            self._in_flight.add(trigger.id)
+                # Mark as in-flight before spawning task to prevent duplicate execution
+                self._in_flight.add(trigger.id)
+
+            # Spawn task outside the lock to avoid blocking other operations
             asyncio.create_task(self._execute_trigger(trigger), name=f"trigger-{trigger.id}")
 
     async def _execute_trigger(self, trigger: TriggerRecord) -> None:
+        """Execute a single trigger and handle success/failure.
+
+        Thread-safety: Acquires _in_flight_lock in finally block to safely
+        remove trigger from in-flight set, preventing race with _poll_once.
+        """
         try:
             fired_at = _utc_now()
+            start_time = _utc_now()
             instructions = self._format_instructions(trigger, fired_at)
 
             logger.info(
@@ -129,12 +154,14 @@ class TriggerScheduler:
             )
 
             if result.success:
+                execution_time = (_utc_now() - start_time).total_seconds()
                 logger.info(
                     "Trigger completed successfully",
                     extra={
                         "trigger_id": trigger.id,
                         "agent": trigger.agent_name,
-                        "response_length": len(result.response) if result.response else 0
+                        "response_length": len(result.response) if result.response else 0,
+                        "execution_time_seconds": round(execution_time, 2)
                     }
                 )
                 self._handle_success(trigger, fired_at)
@@ -157,11 +184,13 @@ class TriggerScheduler:
             )
             self._handle_failure(trigger, _utc_now(), error_msg)
         finally:
-            self._in_flight.discard(trigger.id)
+            # Remove from in-flight set with lock protection
+            async with self._in_flight_lock:
+                self._in_flight.discard(trigger.id)
 
     def _handle_success(self, trigger: TriggerRecord, fired_at: datetime) -> None:
-        logger.info(
-            "Trigger completed",
+        logger.debug(
+            "Scheduling next occurrence for trigger",
             extra={"trigger_id": trigger.id, "agent": trigger.agent_name},
         )
         self._service.schedule_next_occurrence(trigger, fired_at=fired_at)

@@ -1,7 +1,6 @@
 """Simplified Execution Agent Runtime."""
 
 import inspect
-import json
 import asyncio
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass, field
@@ -11,6 +10,9 @@ from server.agents.execution_agent.tools import get_tool_schemas, get_tool_regis
 from server.config import get_settings
 from server.openrouter_client import request_chat_completion
 from server.logging_config import logger
+from server.utils.json_utils import safe_json_dump, safe_json_load
+from server.utils.exceptions import AgentExecutionError, ToolExecutionError
+from server.utils.tool_validation import get_execution_tool_names, split_known_tools
 
 
 @dataclass
@@ -57,8 +59,9 @@ class ExecutionAgentRuntime:
             stop_requested = False
 
             for iteration in range(self.MAX_TOOL_ITERATIONS):
-                logger.info(
-                    f"[{self.agent.name}] Requesting plan (iteration {iteration + 1})"
+                logger.debug(
+                    f"[{self.agent.name}] Requesting plan (iteration {iteration + 1})",
+                    extra={"agent": self.agent.name, "iteration": iteration + 1}
                 )
                 response = await self._make_llm_call(system_prompt, messages, with_tools=True)
                 assistant_message = response.get("choices", [{}])[0].get("message", {})
@@ -84,7 +87,7 @@ class ExecutionAgentRuntime:
                     assistant_entry["tool_calls"] = raw_tool_calls
                 messages.append(assistant_entry)
 
-                plan_signature = self._safe_json_dump({
+                plan_signature = safe_json_dump({
                     "content": assistant_entry["content"].strip(),
                     "tools": [
                         {
@@ -129,7 +132,22 @@ class ExecutionAgentRuntime:
                         messages.append(tool_message)
                         continue
 
-                    tool_signature = self._safe_json_dump({
+                    # Check for invalid arguments marker from validation
+                    if "__invalid_arguments__" in tool_args:
+                        error_message = tool_args["__invalid_arguments__"]
+                        logger.warning(f"[{self.agent.name}] Invalid tool call detected: {error_message}")
+                        failure = {"error": error_message}
+                        tool_message = {
+                            "role": "tool",
+                            "tool_call_id": call_id or tool_name,
+                            "content": self._format_tool_result(
+                                tool_name, False, failure, {}
+                            ),
+                        }
+                        messages.append(tool_message)
+                        continue
+
+                    tool_signature = safe_json_dump({
                         "name": tool_name,
                         "arguments": tool_args,
                     })
@@ -144,13 +162,19 @@ class ExecutionAgentRuntime:
 
                     executed_tool_signatures.add(tool_signature)
                     tools_executed.append(tool_name)
-                    logger.info(f"[{self.agent.name}] Executing tool: {tool_name}")
+                    logger.info(
+                        f"[{self.agent.name}] Executing tool: {tool_name}",
+                        extra={"agent": self.agent.name, "tool": tool_name, "iteration": iteration + 1}
+                    )
 
                     success, result = await self._execute_tool(tool_name, tool_args)
 
                     if success:
-                        logger.info(f"[{self.agent.name}] Tool {tool_name} completed successfully")
-                        record_payload = self._safe_json_dump(result)
+                        logger.info(
+                            f"[{self.agent.name}] Tool {tool_name} completed successfully",
+                            extra={"agent": self.agent.name, "tool": tool_name}
+                        )
+                        record_payload = safe_json_dump(result)
                     else:
                         error_detail = result.get("error") if isinstance(result, dict) else str(result)
                         logger.warning(f"[{self.agent.name}] Tool {tool_name} failed: {error_detail}")
@@ -158,7 +182,7 @@ class ExecutionAgentRuntime:
 
                     self.agent.record_tool_execution(
                         tool_name,
-                        self._safe_json_dump(tool_args),
+                        safe_json_dump(tool_args),
                         record_payload or ""
                     )
 
@@ -187,8 +211,56 @@ class ExecutionAgentRuntime:
                 tools_executed=tools_executed
             )
 
+        except (ValueError, KeyError, TypeError) as e:
+            # Handle expected data validation errors
+            logger.warning(
+                f"[{self.agent.name}] Data validation error",
+                extra={"error": str(e), "error_type": type(e).__name__}
+            )
+            error_msg = f"Invalid data: {str(e)}"
+            self.agent.record_response(f"Error: {error_msg}")
+            return ExecutionResult(
+                agent_name=self.agent.name,
+                success=False,
+                response=f"Failed to complete task: {error_msg}",
+                error=error_msg
+            )
+        except RuntimeError as e:
+            # Handle iteration limits and LLM response errors
+            logger.warning(
+                f"[{self.agent.name}] Runtime error",
+                extra={"error": str(e)}
+            )
+            error_msg = str(e)
+            self.agent.record_response(f"Error: {error_msg}")
+            return ExecutionResult(
+                agent_name=self.agent.name,
+                success=False,
+                response=f"Failed to complete task: {error_msg}",
+                error=error_msg
+            )
+        except AgentExecutionError as e:
+            # Handle agent-specific errors
+            logger.error(
+                f"[{self.agent.name}] Agent execution error",
+                extra={"error": str(e), "agent": e.agent_name, "details": e.details},
+                exc_info=True
+            )
+            error_msg = str(e)
+            self.agent.record_response(f"Error: {error_msg}")
+            return ExecutionResult(
+                agent_name=self.agent.name,
+                success=False,
+                response=f"Failed to complete task: {error_msg}",
+                error=error_msg
+            )
         except Exception as e:
-            logger.error(f"[{self.agent.name}] Execution failed: {e}")
+            # Handle unexpected errors with full logging
+            logger.error(
+                f"[{self.agent.name}] Unexpected execution error",
+                extra={"error": str(e), "error_type": type(e).__name__},
+                exc_info=True
+            )
             error_msg = str(e)
             failure_text = f"Failed to complete task: {error_msg}"
             self.agent.record_response(f"Error: {error_msg}")
@@ -204,7 +276,10 @@ class ExecutionAgentRuntime:
     async def _make_llm_call(self, system_prompt: str, messages: List[Dict], with_tools: bool) -> Dict:
         """Make an LLM call."""
         tools_to_send = self.tool_schemas if with_tools else None
-        logger.info(f"[{self.agent.name}] Calling LLM with model: {self.model}, tools: {len(tools_to_send) if tools_to_send else 0}")
+        logger.debug(
+            f"[{self.agent.name}] Calling LLM",
+            extra={"agent": self.agent.name, "model": self.model, "tools_count": len(tools_to_send) if tools_to_send else 0}
+        )
         return await request_chat_completion(
             model=self.model,
             messages=messages,
@@ -217,6 +292,7 @@ class ExecutionAgentRuntime:
     def _extract_tool_calls(self, raw_tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Extract tool calls from an assistant message."""
         tool_calls: List[Dict[str, Any]] = []
+        known_tools = get_execution_tool_names()
 
         for tool in raw_tools:
             function = tool.get("function", {})
@@ -228,17 +304,53 @@ class ExecutionAgentRuntime:
                 logger.warning("Tool call missing or invalid name: %s", tool)
                 continue
 
-            # Reject concatenated tool names (common LLM hallucination)
-            if any(sep in name for sep in ['_', ' ', '-', '+']) and len(name.split()) > 1:
-                logger.warning("Tool call rejected - concatenated name: %s", name)
+            # Check for concatenated tool names (common LLM hallucination)
+            # This properly detects tools like "gmail_send_emailcalendar_create_event"
+            # but allows valid tools like "gmail_send_email" or "calendar_create_event"
+            concatenated = split_known_tools(name, known_tools)
+            if len(concatenated) > 1:
+                logger.warning(
+                    "Tool call rejected - concatenated name detected: %s (components: %s)",
+                    name,
+                    concatenated,
+                )
+                # Add error tool call to inform the LLM about the mistake
+                tool_calls.append({
+                    "id": tool.get("id"),
+                    "name": concatenated[0],  # Use first valid tool name
+                    "arguments": {
+                        "__invalid_arguments__": (
+                            f"CRITICAL ERROR: You attempted to call multiple tools in a single invocation. "
+                            f"The tool name '{name}' is invalid because it combines these tools: {', '.join(concatenated)}. "
+                            f"You MUST call each tool separately in its own tool invocation. "
+                            f"Make separate calls for: {' and '.join(concatenated)}."
+                        )
+                    },
+                })
                 continue
 
-            if isinstance(args, str):
-                try:
-                    args = json.loads(args) if args else {}
-                except json.JSONDecodeError:
-                    logger.warning("Tool call has invalid JSON arguments: %s", args)
-                    args = {}
+            # Check if tool name is valid (exists in registry)
+            if name not in known_tools:
+                logger.warning("Tool call for unknown tool: %s", name)
+                tool_calls.append({
+                    "id": tool.get("id"),
+                    "name": name,
+                    "arguments": {
+                        "__invalid_arguments__": (
+                            f"ERROR: Unknown tool '{name}'. "
+                            f"Please use only the tools provided in your schema."
+                        )
+                    },
+                })
+                continue
+
+            # Parse arguments using safe_json_load
+            parsed_args, error = safe_json_load(args)
+            if error:
+                logger.warning("Tool call has invalid arguments: %s", error)
+                args = {}
+            else:
+                args = parsed_args
 
             tool_calls.append({
                 "id": tool.get("id"),
@@ -247,14 +359,6 @@ class ExecutionAgentRuntime:
             })
 
         return tool_calls
-
-    # Safely convert objects to JSON with fallback to string representation
-    def _safe_json_dump(self, payload: Any) -> str:
-        """Serialize payload to JSON, falling back to string representation."""
-        try:
-            return json.dumps(payload, default=str)
-        except TypeError:
-            return str(payload)
 
     # Format tool execution results into JSON structure for LLM consumption
     def _format_tool_result(
@@ -280,7 +384,7 @@ class ExecutionAgentRuntime:
                 "arguments": arguments,
                 "error": error_detail,
             }
-        return self._safe_json_dump(payload)
+        return safe_json_dump(payload)
 
     # Execute tool function from registry with error handling and async support
     async def _execute_tool(self, tool_name: str, arguments: Dict) -> Tuple[bool, Any]:
@@ -301,6 +405,26 @@ class ExecutionAgentRuntime:
                 result = await result
 
             return True, result
+        except (ValueError, KeyError, TypeError) as e:
+            # Handle expected parameter errors
+            logger.warning(
+                f"[{self.agent.name}] Tool parameter error: {tool_name}",
+                extra={"error": str(e), "error_type": type(e).__name__, "arguments": arguments}
+            )
+            return False, {"error": f"Invalid parameters: {str(e)}"}
+        except ToolExecutionError as e:
+            # Handle tool-specific errors
+            logger.error(
+                f"[{self.agent.name}] Tool execution error: {tool_name}",
+                extra={"error": str(e), "tool": e.tool_name, "arguments": e.arguments},
+                exc_info=True
+            )
+            return False, {"error": str(e)}
         except Exception as e:
-            logger.error(f"[{self.agent.name}] Tool execution error: {e}", exc_info=True)
+            # Handle unexpected tool errors
+            logger.error(
+                f"[{self.agent.name}] Unexpected tool error: {tool_name}",
+                extra={"error": str(e), "error_type": type(e).__name__},
+                exc_info=True
+            )
             return False, {"error": str(e)}
