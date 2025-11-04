@@ -122,6 +122,21 @@ class InteractionAgentRuntime:
                     execution_agents_used=1,
                 )
 
+        # Special handling for general reminder-related messages
+        if self._is_reminder_related(agent_message):
+            # For reminder-related messages that aren't creations or notifications,
+            # provide a minimal response to avoid verbose discussions
+            if "problème" in agent_message.lower() or "problem" in agent_message.lower():
+                response = "Le système de rappels rencontre des difficultés. Utilise une alarme téléphone comme alternative."
+            else:
+                response = "Rappel noté."
+            self.conversation_log.record_reply(response)
+            return InteractionResult(
+                success=True,
+                response=response,
+                execution_agents_used=1,
+            )
+
         try:
             transcript_before = self._load_conversation_transcript()
             self.conversation_log.record_agent_message(agent_message)
@@ -472,37 +487,74 @@ class InteractionAgentRuntime:
 
     def _is_reminder_creation(self, agent_message: str) -> bool:
         """Check if the agent message is about creating a reminder."""
+        message_lower = agent_message.lower()
         return (
-            "Rappels personnels" in agent_message and
-            ("rappel" in agent_message.lower() or "reminder" in agent_message.lower()) and
-            ("créé" in agent_message.lower() or "created" in agent_message.lower() or "programmé" in agent_message.lower())
+            ("rappel" in message_lower or "reminder" in message_lower) and
+            ("créé" in message_lower or "created" in message_lower or 
+             "programmé" in message_lower or "programmed" in message_lower or
+             "actif" in message_lower or "active" in message_lower) and
+            ("#" in agent_message or "id" in message_lower)  # Look for ID indicator
         )
 
     def _format_reminder_creation_message(self, agent_message: str) -> Optional[str]:
         """Format a concise confirmation message for reminder creation."""
-        # Extract key information from the agent message
-        if "RAPPEL CRÉÉ" in agent_message or "rappel créé" in agent_message.lower():
-            # Try to extract the reminder content and time
-            lines = agent_message.split('\n')
-            reminder_content = ""
-            trigger_time = ""
-            
-            for line in lines:
-                if "Titre" in line and ":" in line:
-                    # Extract title
-                    parts = line.split(":", 1)
-                    if len(parts) > 1:
-                        reminder_content = parts[1].strip().strip('"')
-                elif "Heure de déclenchement" in line and ":" in line:
-                    # Extract time
-                    parts = line.split(":", 1)
-                    if len(parts) > 1:
-                        trigger_time = parts[1].strip()
-            
-            if reminder_content and trigger_time:
-                return f"✅ Rappel créé : \"{reminder_content}\" pour {trigger_time}"
-            elif reminder_content:
-                return f"✅ Rappel créé : \"{reminder_content}\""
+        # Look for reminder content and time information
+        lines = agent_message.split('\n')
+        reminder_title = ""
+        trigger_time = ""
         
-        # Fallback: simple confirmation
-        return "✅ Rappel créé avec succès"
+        for line in lines:
+            line_lower = line.lower()
+            # Extract title/content
+            if ("titre" in line_lower or "title" in line_lower) and ":" in line:
+                parts = line.split(":", 1)
+                if len(parts) > 1:
+                    content = parts[1].strip().strip('"')
+                    if content and len(content) > 3:  # Avoid very short matches
+                        reminder_title = content
+            elif ("message" in line_lower or "content" in line_lower) and ":" in line:
+                parts = line.split(":", 1)
+                if len(parts) > 1:
+                    content = parts[1].strip().strip('"')
+                    if content and not reminder_title:  # Use message if no title found
+                        reminder_title = content
+            # Extract time
+            elif ("heure" in line_lower or "time" in line_lower) and ("déclenchement" in line_lower or "trigger" in line_lower) and ":" in line:
+                parts = line.split(":", 1)
+                if len(parts) > 1:
+                    time_str = parts[1].strip()
+                    if time_str:
+                        trigger_time = time_str
+        
+        # Format the response
+        if reminder_title:
+            if trigger_time:
+                # Try to extract just the time part
+                time_parts = trigger_time.split()
+                time_only = time_parts[0] if time_parts else trigger_time
+                return f"✅ Rappel créé : \"{reminder_title}\" pour {time_only}"
+            else:
+                return f"✅ Rappel créé : \"{reminder_title}\""
+        
+        # Fallback for any reminder creation message
+        if "rappel" in agent_message.lower() and ("créé" in agent_message.lower() or "created" in agent_message.lower()):
+            return "✅ Rappel créé avec succès"
+        
+        return None
+
+    def _is_reminder_related(self, message: str) -> bool:
+        """Check if a message is related to reminders but not a creation or notification."""
+        message_lower = message.lower()
+        reminder_keywords = [
+            "rappel", "reminder", "remind", "rappeler", "mémo", "memo",
+            "alarme", "alarm", "notification", "notifier"
+        ]
+
+        # Check for reminder keywords
+        has_reminder_keyword = any(keyword in message_lower for keyword in reminder_keywords)
+
+        # Exclude creation and notification messages
+        is_creation = self._is_reminder_creation(message)
+        is_notification = self._is_reminder_notification(message)
+
+        return has_reminder_keyword and not is_creation and not is_notification
