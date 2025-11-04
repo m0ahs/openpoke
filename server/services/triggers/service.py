@@ -230,8 +230,13 @@ class TriggerService:
         fired_at: datetime,
     ) -> Optional[TriggerRecord]:
         if not trigger.recurrence_rule:
-            self.mark_as_completed(trigger.id, agent_name=trigger.agent_name)
-            return self._store.fetch_one(trigger.id, trigger.agent_name)
+            # One-time triggers: delete after firing instead of just marking completed
+            logger.info(
+                "Deleting one-time trigger after successful execution",
+                extra={"trigger_id": trigger.id, "agent": trigger.agent_name}
+            )
+            self._store.delete(trigger.id, trigger.agent_name)
+            return None
 
         tz = resolve_timezone(trigger.timezone)
         next_fire = self._compute_next_after(trigger.recurrence_rule, fired_at, tz)
