@@ -155,7 +155,14 @@ def execute_calendar_tool(
     try:
         client = _get_composio_client(settings)
         
-        logger.info(f"Executing calendar tool: {tool_name} for user: {sanitized_user_id}")
+        logger.info(
+            f"Executing calendar tool: {tool_name} for user: {sanitized_user_id}",
+            extra={
+                "tool": tool_name,
+                "user_id": sanitized_user_id,
+                "arguments": prepared_arguments
+            }
+        )
         
         # Use client.client.tools.execute() like Gmail does
         result = client.client.tools.execute(
@@ -172,13 +179,17 @@ def execute_calendar_tool(
     except Exception as exc:
         error_msg = str(exc)
         # Check for specific Composio connection errors
-        if "No connected account found" in error_msg or "400" in error_msg:
-            logger.warning(
-                "Calendar tool execution failed - no connected account: %s",
-                error_msg,
-                extra={"tool": tool_name, "user_id": sanitized_user_id},
+        if "No connected account found" in error_msg or "400" in error_msg or "OAuth" in error_msg or "authentication" in error_msg.lower():
+            logger.error(
+                "Calendar tool execution failed - authentication/connection issue",
+                extra={
+                    "tool": tool_name,
+                    "user_id": sanitized_user_id,
+                    "error": error_msg,
+                    "suggestion": "User may need to reconnect their Calendar account or token may be expired"
+                }
             )
-            return {"error": "Calendar not connected. Please connect your Calendar account first."}
+            return {"error": f"Calendar authentication required. Please reconnect your Calendar account. Details: {error_msg}"}
         else:
             logger.exception(
                 f"Calendar tool execution failed: {tool_name}",
@@ -201,6 +212,7 @@ def initiate_calendar_connect(
         JSON response with redirect URL or error
     """
     import os
+    import uuid
     
     auth_config_id = payload.auth_config_id or settings.composio_calendar_auth_config_id or ""
     if not auth_config_id:
@@ -217,7 +229,11 @@ def initiate_calendar_connect(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
 
-    user_id = payload.user_id or f"web-{os.getpid()}"
+    # Use provided user_id or generate a stable one
+    user_id = payload.user_id or f"web-{uuid.uuid4().hex}"
+    
+    logger.info(f"Initiating Calendar connect for user: {user_id}")
+    
     _set_active_calendar_user_id(user_id)
     _clear_cached_profile(user_id)
     
