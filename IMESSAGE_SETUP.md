@@ -146,24 +146,48 @@ Les deux partagent :
 
 ## Dépannage
 
+### "Messages app is not running"
+
+**Cause** : L'application Messages de macOS n'est pas ouverte.
+
+**Solution** :
+1. Ouvrez l'application **Messages** sur votre Mac
+2. Assurez-vous d'être connecté avec votre compte Apple
+3. Relancez le test ou le watcher
+
+**Important** : L'application Messages doit rester ouverte en arrière-plan pour que l'intégration fonctionne.
+
 ### "Permission denied" lors de l'accès à la base iMessage
 
 **Solution** : Accordez Full Disk Access à votre IDE/Terminal (voir Étape 1)
 
+### "ENOENT: no such file or directory, open package.json"
+
+**Cause** : Vous essayez d'exécuter `npm install` dans le mauvais répertoire.
+
+**Solution** :
+```bash
+# Le package.json est dans .conductor/tokyo/, pas à la racine
+cd .conductor/tokyo
+npm install
+```
+
 ### Les messages ne sont pas détectés
 
 **Vérifications** :
-1. Le watcher est-il en cours d'exécution ? (`npm run watch`)
-2. iMessage fonctionne-t-il normalement sur votre Mac ?
-3. Avez-vous accordé Full Disk Access ?
-4. Redémarrez le watcher après avoir modifié les permissions
+1. L'application **Messages** est-elle ouverte ?
+2. Le watcher est-il en cours d'exécution ? (`npm run watch`)
+3. iMessage fonctionne-t-il normalement sur votre Mac ?
+4. Avez-vous accordé Full Disk Access ?
+5. Redémarrez le watcher après avoir modifié les permissions
 
 ### Les réponses ne sont pas envoyées
 
 **Vérifications** :
-1. Vérifiez les logs dans la console du watcher
-2. Testez l'envoi manuel : `node server/services/imessage/send_message.js "votre-numero" "test"`
-3. Vérifiez que Node.js est bien installé : `node --version`
+1. L'application **Messages** est-elle ouverte ?
+2. Vérifiez les logs dans la console du watcher
+3. Testez l'envoi manuel : `node server/services/imessage/send_message.js "votre-numero" "test"`
+4. Vérifiez que Node.js est bien installé : `node --version`
 
 ### Messages en double
 
