@@ -8,6 +8,7 @@ from typing import Any, Optional
 from ...logging_config import logger
 from ...services.conversation import get_conversation_log
 from ...services.execution import get_agent_roster, get_execution_agent_logs
+from ...services.imessage import get_message_context, send_imessage
 from ...utils.tool_validation import get_interaction_tool_names
 from ..execution_agent.batch_manager import ExecutionBatchManager
 
@@ -214,6 +215,16 @@ async def send_message_to_user(message: str) -> ToolResult:
     """Record a user-visible reply in the conversation log."""
     log = get_conversation_log()
     await log.record_reply(message)
+
+    # If the message came from iMessage, send the response via iMessage
+    context = get_message_context()
+    if context and context.source == "imessage" and context.sender:
+        try:
+            await send_imessage(context.sender, message)
+            logger.info("Response sent via iMessage", extra={"recipient": context.sender})
+        except Exception as exc:
+            logger.error("Failed to send iMessage response", extra={"error": str(exc)})
+            # Continue anyway - message is still recorded in log
 
     return ToolResult(
         success=True,
