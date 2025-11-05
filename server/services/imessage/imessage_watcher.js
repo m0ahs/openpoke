@@ -94,10 +94,9 @@ class AlynIMessageWatcher {
       return;
     }
 
-    // Skip messages older than last check
+    // Skip messages older than last check (don't add to cache - might become relevant later)
     if (message.date < new Date(this.lastCheckTime)) {
       console.log(`  ⏭️  Skipping old message (before ${new Date(this.lastCheckTime).toISOString()})`);
-      this.processedMessageIds.add(message.id);
       return;
     }
 
