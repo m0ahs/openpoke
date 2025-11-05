@@ -30,5 +30,11 @@ if ! command -v node &> /dev/null; then
     exit 1
 fi
 
+# Rebuild better-sqlite3 for current Node.js version
+echo "🔧 Rebuilding better-sqlite3 for Node.js $(node --version)..."
+npm rebuild better-sqlite3 --silent
+
+echo ""
+
 # Start the watcher
 npm run watch

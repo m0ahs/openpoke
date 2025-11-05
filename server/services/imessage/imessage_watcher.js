@@ -78,19 +78,25 @@ class AlynIMessageWatcher {
    * Process a new iMessage
    */
   async processMessage(message) {
+    // Debug log to see message structure
+    console.log(`🔍 Message: id=${message.id}, sender=${message.sender}, isFromMe=${message.isFromMe}, date=${message.date}`);
+
     // Skip if already processed
     if (this.processedMessageIds.has(message.id)) {
+      console.log(`  ⏭️  Already processed`);
       return;
     }
 
-    // Skip messages from self
-    if (message.is_from_me) {
+    // Skip messages from self (check both isFromMe and is_from_me)
+    if (message.isFromMe || message.is_from_me) {
+      console.log(`  ⏭️  Skipping self message`);
       this.processedMessageIds.add(message.id);
       return;
     }
 
     // Skip messages older than last check
     if (message.date < new Date(this.lastCheckTime)) {
+      console.log(`  ⏭️  Skipping old message (before ${new Date(this.lastCheckTime).toISOString()})`);
       this.processedMessageIds.add(message.id);
       return;
     }
@@ -138,6 +144,12 @@ class AlynIMessageWatcher {
 
         // Process new messages
         const messages = result.messages || result || [];
+
+        // Debug log
+        if (messages.length > 0) {
+          console.log(`📊 Found ${messages.length} messages in last 5 minutes`);
+        }
+
         for (const message of messages) {
           await this.processMessage(message);
         }
@@ -146,6 +158,7 @@ class AlynIMessageWatcher {
         this.lastCheckTime = Date.now();
       } catch (error) {
         console.error(`❌ Error checking messages: ${error.message}`);
+        console.error(error.stack);
       }
     }, POLL_INTERVAL);
   }
