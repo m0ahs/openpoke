@@ -5,7 +5,7 @@
  * Usage: node send_message.js <recipient> <message>
  */
 
-import { iMessageSDK } from '@photon-ai/imessage-kit';
+import { IMessageSDK } from '@photon-ai/imessage-kit';
 
 const [recipient, message] = process.argv.slice(2);
 
@@ -14,16 +14,13 @@ if (!recipient || !message) {
   process.exit(1);
 }
 
-const sdk = new iMessageSDK({
+const sdk = new IMessageSDK({
   debug: false,
   timeout: 10000
 });
 
 try {
-  await sdk.send({
-    to: recipient,
-    text: message
-  });
+  await sdk.send(recipient, message);
   console.log(`✉️  Message sent to ${recipient}`);
   process.exit(0);
 } catch (error) {

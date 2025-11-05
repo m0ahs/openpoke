@@ -7,7 +7,7 @@
  * for processing by the Alyn interaction agent.
  */
 
-import { iMessageSDK } from '@photon-ai/imessage-kit';
+import { IMessageSDK } from '@photon-ai/imessage-kit';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -22,7 +22,7 @@ const VENV_PYTHON = join(__dirname, '../../../.venv/bin/python');
 
 class AlynIMessageWatcher {
   constructor() {
-    this.sdk = new iMessageSDK({
+    this.sdk = new IMessageSDK({
       debug: true,
       concurrency: 5,
       timeout: 30000
@@ -131,12 +131,13 @@ class AlynIMessageWatcher {
         // Get recent messages (last 5 minutes)
         const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
 
-        const messages = this.sdk.getMessages({
+        const result = await this.sdk.getMessages({
           limit: 50,
           after: fiveMinutesAgo
         });
 
         // Process new messages
+        const messages = result.messages || result || [];
         for (const message of messages) {
           await this.processMessage(message);
         }
@@ -154,10 +155,7 @@ class AlynIMessageWatcher {
    */
   async sendMessage(recipient, text) {
     try {
-      await this.sdk.send({
-        to: recipient,
-        text: text
-      });
+      await this.sdk.send(recipient, text);
       console.log(`✉️  Sent to ${recipient}: "${text}"`);
       return true;
     } catch (error) {
