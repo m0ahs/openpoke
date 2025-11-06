@@ -46,7 +46,7 @@ const toBubbles = (payload: unknown): ChatBubble[] => {
 };
 
 export default function Page() {
-  const { settings, setSettings } = useSettings();
+  const { settings, saveSettings } = useSettings();
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatBubble[]>([]);
@@ -256,7 +256,7 @@ export default function Page() {
           </div>
         </div>
 
-        <SettingsModal open={open} onClose={closeSettings} settings={settings} onSave={setSettings} />
+        <SettingsModal open={open} onClose={closeSettings} settings={settings} onSave={saveSettings} />
       </div>
     </main>
   );
