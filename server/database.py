@@ -73,7 +73,7 @@ def init_db() -> None:
     """
     try:
         # Import all models here to ensure they're registered with Base
-        from .models import User  # noqa: F401
+        from .db_models import User  # noqa: F401
 
         # Create all tables
         Base.metadata.create_all(bind=engine)
@@ -92,8 +92,10 @@ def check_db_connection() -> bool:
         bool: True if connection successful, False otherwise
     """
     try:
+        from sqlalchemy import text
+
         db = SessionLocal()
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         db.close()
         logger.info("✅ Database connection verified")
         return True

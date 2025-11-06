@@ -27,31 +27,18 @@ def save_profile(profile: UserProfileData):
             "location": profile.location,
         }
 
-        logger.info(
-            "💾 Saving user profile",
-            extra={
-                "userName": profile.userName,
-                "birthDate": profile.birthDate,
-                "location": profile.location
-            }
-        )
+        logger.info(f"💾 Saving user profile: userName='{profile.userName}', birthDate='{profile.birthDate}', location='{profile.location}'")
 
         profile_store.save(profile_dict)
 
         # Verify it was saved
         loaded = profile_store.load()
-        logger.info(
-            "✅ Profile saved and verified",
-            extra={"loaded_data": loaded}
-        )
+        logger.info(f"✅ Profile saved and verified: {loaded}")
 
         return {"ok": True, "saved": profile_dict, "verified": loaded}
 
     except Exception as exc:
-        logger.error(
-            "❌ Failed to save profile",
-            extra={"error": str(exc), "profile": profile.dict()}
-        )
+        logger.error(f"❌ Failed to save profile: error={exc}, profile={profile.dict()}")
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -62,10 +49,7 @@ def load_profile():
         profile_store = get_user_profile()
         profile_data = profile_store.load()
 
-        logger.info(
-            "📖 Loading user profile",
-            extra={"profile_data": profile_data}
-        )
+        logger.info(f"📖 Loading user profile: {profile_data}")
 
         return {
             "ok": True,
@@ -77,8 +61,5 @@ def load_profile():
         }
 
     except Exception as exc:
-        logger.error(
-            "❌ Failed to load profile",
-            extra={"error": str(exc)}
-        )
+        logger.error(f"❌ Failed to load profile: error={exc}")
         raise HTTPException(status_code=500, detail=str(exc))

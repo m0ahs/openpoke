@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from ..database import SessionLocal
 from ..logging_config import logger
-from ..models import User
+from ..db_models import User
 
 
 class UserProfileDB:

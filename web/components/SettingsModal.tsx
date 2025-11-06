@@ -62,9 +62,12 @@ export function useSettings() {
       });
   }, []);
 
-  const persist = useCallback(async (s: Settings) => {
+  const persistAndSave = useCallback(async (s: Settings) => {
+    // Update React state
     setSettings(s);
+
     try {
+      // Update localStorage
       localStorage.setItem('user_timezone', s.timezone);
       localStorage.setItem('user_name', s.userName);
       localStorage.setItem('user_birth_date', s.birthDate);
@@ -85,7 +88,7 @@ export function useSettings() {
     }
   }, []);
 
-  return { settings, setSettings: persist } as const;
+  return { settings, updateSettings: setSettings, saveSettings: persistAndSave } as const;
 }
 
 function coerceEmailFrom(value: unknown): string | null {
