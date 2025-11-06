@@ -220,14 +220,8 @@ async def send_message_to_user(message: str) -> ToolResult:
     from .context import get_telegram_chat_id
     from ...services.telegram_service import get_telegram_service
 
-    # CRITICAL: Enforce 500 char limit HARD at runtime
-    MAX_MESSAGE_LENGTH = 500
-    if len(message) > MAX_MESSAGE_LENGTH:
-        logger.warning(
-            f"Message too long ({len(message)} chars), truncating to {MAX_MESSAGE_LENGTH}",
-            extra={"original_length": len(message)}
-        )
-        message = message[:MAX_MESSAGE_LENGTH - 50] + "\n\n(Tronqué - trop long)"
+    # NO TRUNCATION - let telegram_service handle splitting into multiple short messages
+    # This allows Seline to send 2-3 short messages instead of one truncated message
 
     log = get_conversation_log()
     await log.record_reply(message)
