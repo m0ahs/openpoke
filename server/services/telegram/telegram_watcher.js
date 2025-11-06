@@ -19,9 +19,10 @@ const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 // Configuration backend : LOCAL (default) ou RAILWAY
 // On Railway, even if BACKEND_MODE=LOCAL, we use HTTP to localhost instead of spawn
+// Use 127.0.0.1 instead of localhost to force IPv4 (avoids IPv6 connection issues)
 const IS_RAILWAY = process.env.RAILWAY_ENVIRONMENT !== undefined;
 const BACKEND_MODE = IS_RAILWAY ? 'RAILWAY' : (process.env.BACKEND_MODE || 'LOCAL');
-const BACKEND_URL = IS_RAILWAY ? 'http://localhost:8001' : (process.env.BACKEND_URL || 'https://alyn-backend.up.railway.app');
+const BACKEND_URL = IS_RAILWAY ? 'http://127.0.0.1:8001' : (process.env.BACKEND_URL || 'https://alyn-backend.up.railway.app');
 const BACKEND_ENDPOINT = process.env.BACKEND_ENDPOINT || '/api/v1/telegram/message';
 
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
