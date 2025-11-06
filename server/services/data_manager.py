@@ -209,21 +209,49 @@ class DataManager:
             try:
                 file_path = DATA_DIR / filename
 
+                logger.info(
+                    f"💾 Starting save for {filename}",
+                    extra={
+                        "file_path": str(file_path),
+                        "data_keys": list(data.keys()) if isinstance(data, dict) else "not_a_dict",
+                        "backup": backup
+                    }
+                )
+
                 # Create backup if requested and file exists
                 if backup and file_path.exists():
-                    self._create_backup(file_path)
+                    backup_path = self._create_backup(file_path)
+                    logger.info(f"📦 Backup created: {backup_path.name if backup_path else 'failed'}")
 
                 # Atomic write
                 self._write_json_atomic(file_path, data)
 
+                # Verify the file was written
+                if not file_path.exists():
+                    logger.error(f"❌ File does not exist after write: {file_path}")
+                    return False
+
+                size = file_path.stat().st_size
+                logger.info(f"✅ File written: {filename} ({size} bytes)")
+
+                # Verify we can read it back
+                with file_path.open("r") as f:
+                    loaded = json.load(f)
+                    logger.info(f"✅ Verified read-back: {list(loaded.keys()) if isinstance(loaded, dict) else 'not_a_dict'}")
+
                 # Update metadata
                 self._update_metadata(f"save:{filename}")
 
-                logger.info(f"✅ Saved {filename}", extra={"size_bytes": file_path.stat().st_size})
+                logger.info(f"✅ Saved {filename}", extra={"size_bytes": size})
                 return True
 
             except Exception as exc:
-                logger.error(f"❌ Failed to save {filename}", extra={"error": str(exc)})
+                logger.error(
+                    f"❌ Failed to save {filename}",
+                    extra={"error": str(exc), "error_type": type(exc).__name__}
+                )
+                import traceback
+                logger.error(f"Traceback: {traceback.format_exc()}")
                 return False
 
     def load_json(self, filename: str) -> Dict[str, Any]:
@@ -238,7 +266,27 @@ class DataManager:
         """
         with self._lock:
             file_path = DATA_DIR / filename
-            return self._read_json(file_path)
+
+            logger.info(
+                f"📖 Loading {filename}",
+                extra={
+                    "file_path": str(file_path),
+                    "exists": file_path.exists(),
+                    "size": file_path.stat().st_size if file_path.exists() else 0
+                }
+            )
+
+            data = self._read_json(file_path)
+
+            logger.info(
+                f"✅ Loaded {filename}",
+                extra={
+                    "data_keys": list(data.keys()) if isinstance(data, dict) else "not_a_dict",
+                    "empty": len(data) == 0
+                }
+            )
+
+            return data
 
     def update_field(self, filename: str, key: str, value: Any, backup: bool = True) -> bool:
         """
