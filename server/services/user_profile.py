@@ -21,7 +21,7 @@ if _use_database:
     from sqlalchemy.orm import Session
 
     from ..database import SessionLocal
-    from ..models import User
+    from ..db_models import User
 
     class UserProfile:
         """PostgreSQL-backed user profile storage."""

@@ -73,7 +73,7 @@ def init_db() -> None:
     """
     try:
         # Import all models here to ensure they're registered with Base
-        from .models import User  # noqa: F401
+        from .db_models import User  # noqa: F401
 
         # Create all tables
         Base.metadata.create_all(bind=engine)
