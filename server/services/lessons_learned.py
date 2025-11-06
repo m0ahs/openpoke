@@ -1,44 +1,52 @@
-"""Lessons Learned system for Seline to improve from mistakes."""
+"""Lessons Learned system for Seline to improve from mistakes - using DataManager."""
 
-import json
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ..logging_config import logger
+from .data_manager import get_data_manager
+
+LESSONS_FILENAME = "lessons_learned.json"
 
 
 class LessonsLearnedService:
-    """Manages lessons learned from errors and user feedback."""
+    """
+    Manages lessons learned from errors and user feedback.
 
-    def __init__(self, lessons_file: Optional[Path] = None):
+    Uses centralized DataManager for:
+    - Automatic backups
+    - Atomic writes
+    - Data validation
+    """
+
+    def __init__(self):
         """Initialize the lessons learned service."""
-        if lessons_file is None:
-            lessons_file = Path(__file__).parent.parent / "data" / "lessons_learned.json"
-
-        self.lessons_file = lessons_file
-        self.lessons_file.parent.mkdir(parents=True, exist_ok=True)
+        self._data_manager = get_data_manager()
 
         # Initialize file if it doesn't exist
-        if not self.lessons_file.exists():
+        lessons = self._load_lessons()
+        if not lessons:
             self._save_lessons([])
 
     def _load_lessons(self) -> List[Dict[str, Any]]:
         """Load lessons from file."""
-        try:
-            with open(self.lessons_file, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception as exc:
-            logger.error(f"Failed to load lessons: {exc}")
-            return []
+        data = self._data_manager.load_json(LESSONS_FILENAME)
+        # Support both dict format (with 'lessons' key) and list format
+        if isinstance(data, dict):
+            return data.get("lessons", [])
+        elif isinstance(data, list):
+            return data
+        return []
 
     def _save_lessons(self, lessons: List[Dict[str, Any]]) -> None:
         """Save lessons to file."""
-        try:
-            with open(self.lessons_file, "w", encoding="utf-8") as f:
-                json.dump(lessons, f, indent=2, ensure_ascii=False)
-        except Exception as exc:
-            logger.error(f"Failed to save lessons: {exc}")
+        # Wrap in dict for better extensibility
+        data = {
+            "lessons": lessons,
+            "last_updated": datetime.utcnow().isoformat(),
+            "total_lessons": len(lessons)
+        }
+        self._data_manager.save_json(LESSONS_FILENAME, data, backup=True)
 
     def add_lesson(
         self,
