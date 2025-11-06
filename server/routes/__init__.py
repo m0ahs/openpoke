@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 # DISABLED: Web chat interface - TELEGRAM ONLY
 # from .chat import router as chat_router
+from .data_admin import router as data_admin_router
 from .gcalendar import router as calendar_router
 from .gmail import router as gmail_router
 from .meta import router as meta_router
@@ -17,5 +18,6 @@ api_router.include_router(gmail_router)
 api_router.include_router(calendar_router)
 api_router.include_router(profile_router)
 api_router.include_router(telegram_router)
+api_router.include_router(data_admin_router)  # Railway Volume data management
 
 __all__ = ["api_router"]
