@@ -67,14 +67,22 @@ def _generate_available_tools_section() -> str:
 # Load and return the pre-defined system prompt from markdown file with user profile
 def build_system_prompt() -> str:
     """Return the system prompt for the interaction agent with user profile information."""
+    from ...services.lessons_learned import get_lessons_service
+
     profile_store = get_user_profile()
     profile = profile_store.load()
 
     # Start with base prompt
     sections = [SYSTEM_PROMPT]
-    
+
     # Add available tools section
     sections.append(_generate_available_tools_section())
+
+    # Add lessons learned section (critical - shows past mistakes)
+    lessons_service = get_lessons_service()
+    lessons_text = lessons_service.format_lessons_for_prompt(max_lessons=5)
+    if lessons_text:
+        sections.append(lessons_text)
 
     # Add user profile section
     user_context = []

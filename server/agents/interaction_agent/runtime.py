@@ -44,7 +44,7 @@ class _LoopSummary:
 class InteractionAgentRuntime:
     """Manages the interaction agent's request processing."""
 
-    MAX_TOOL_ITERATIONS = 8
+    MAX_TOOL_ITERATIONS = 5  # Reduced from 8 to prevent infinite loops
 
     # Initialize interaction agent runtime with settings and service dependencies
     def __init__(self) -> None:
@@ -412,6 +412,13 @@ class InteractionAgentRuntime:
                 }
                 messages.append(tool_message)
         else:
+            # Auto-learn from this error
+            from ...services.lessons_learned import get_lessons_service
+            lessons_service = get_lessons_service()
+            lessons_service.auto_learn_from_error(
+                "RuntimeError",
+                "Reached tool iteration limit without final response"
+            )
             raise RuntimeError("Reached tool iteration limit without final response")
 
         logger.debug(

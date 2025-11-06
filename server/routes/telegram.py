@@ -32,6 +32,9 @@ async def _process_telegram_message_background(chat_id: str, message: str) -> No
     telegram_service = get_telegram_service()
 
     try:
+        # Send typing indicator immediately
+        await telegram_service.send_typing_action(chat_id)
+
         logger.info(
             "Background processing started",
             extra={

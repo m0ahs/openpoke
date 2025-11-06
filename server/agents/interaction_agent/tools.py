@@ -3,7 +3,7 @@
 import asyncio
 import json
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 from ...logging_config import logger
 from ...services.conversation import get_conversation_log
@@ -210,6 +210,10 @@ def remove_agent(agent_name: str, clear_logs: bool = False) -> ToolResult:
     )
 
 
+# Cache to prevent duplicate messages in quick succession
+_last_telegram_messages: Dict[str, str] = {}
+
+
 # Send immediate message to user and record in conversation history
 async def send_message_to_user(message: str) -> ToolResult:
     """Record a user-visible reply in the conversation log and send to Telegram if available."""
@@ -222,9 +226,26 @@ async def send_message_to_user(message: str) -> ToolResult:
     # If we have a Telegram chat ID, send the message immediately
     chat_id = get_telegram_chat_id()
     if chat_id:
+        # Check if this is a duplicate message (prevent spam)
+        last_msg = _last_telegram_messages.get(chat_id)
+        if last_msg == message:
+            logger.info(
+                "Duplicate message detected - skipping Telegram send",
+                extra={"chat_id": chat_id, "message_preview": message[:100]}
+            )
+            return ToolResult(
+                success=True,
+                payload={"status": "duplicate_skipped"},
+                user_message=message,
+                recorded_reply=True,
+            )
+
         telegram_service = get_telegram_service()
         sent = await telegram_service.send_message(chat_id, message)
-        if not sent:
+        if sent:
+            # Cache this message to prevent duplicates
+            _last_telegram_messages[chat_id] = message
+        else:
             logger.warning(
                 "Failed to send message to Telegram",
                 extra={"chat_id": chat_id, "message_preview": message[:100]}
