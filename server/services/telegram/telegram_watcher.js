@@ -20,7 +20,7 @@ const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 // Configuration backend : LOCAL (default) ou RAILWAY
 const BACKEND_MODE = process.env.BACKEND_MODE || 'LOCAL'; // 'LOCAL' ou 'RAILWAY'
 const BACKEND_URL = process.env.BACKEND_URL || 'https://alyn-backend.up.railway.app';
-const BACKEND_ENDPOINT = process.env.BACKEND_ENDPOINT || '/api/v1/chat/send';
+const BACKEND_ENDPOINT = process.env.BACKEND_ENDPOINT || '/api/v1/telegram/message';
 
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 
@@ -174,14 +174,11 @@ async function handleRailwayBackend(chatId, text, stopTyping) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Accept': 'text/plain, */*'
+        'Accept': 'application/json'
       },
       body: JSON.stringify({
-        system: '',
-        messages: [
-          { role: 'user', content: text }
-        ],
-        stream: false
+        message: text,
+        chat_id: chatId.toString()
       }),
       signal: controller.signal
     });
@@ -189,16 +186,17 @@ async function handleRailwayBackend(chatId, text, stopTyping) {
     clearTimeout(timeoutId);
     stopTyping();
 
-    const responseText = await response.text();
+    const responseData = await response.json();
 
-    if (response.ok && responseText.trim()) {
-      bot.sendMessage(chatId, responseText, {
+    if (response.ok && responseData.response) {
+      bot.sendMessage(chatId, responseData.response, {
         disable_notification: false
       });
-      console.log(`✅ Réponse envoyée sur Telegram (${responseText.length} caractères)`);
+      console.log(`✅ Réponse envoyée sur Telegram (${responseData.response.length} caractères)`);
     } else {
-      console.error(`❌ Erreur HTTP (${response.status}):`, responseText.substring(0, 200));
-      bot.sendMessage(chatId, 'Désolé, une erreur s\'est produite lors du traitement de ton message.', {
+      const errorMsg = responseData.error || responseData.response || 'Une erreur s\'est produite';
+      console.error(`❌ Erreur HTTP (${response.status}):`, errorMsg.substring(0, 200));
+      bot.sendMessage(chatId, errorMsg, {
         disable_notification: false
       });
     }
