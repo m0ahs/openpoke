@@ -430,13 +430,12 @@ class InteractionAgentRuntime:
                 }
             )
 
-            # If we have ANYTHING to show the user, show it
-            # Otherwise we'll raise the error and let the caller handle it
-            if summary.user_messages or summary.last_assistant_text:
-                logger.warning("Returning partial response despite hitting iteration limit")
-                break  # Exit loop and return what we have
-            else:
+            # If we have NOTHING to show the user, raise error
+            # Otherwise we'll just log warning and return partial response
+            if not (summary.user_messages or summary.last_assistant_text):
                 raise RuntimeError("Reached tool iteration limit without final response")
+
+            logger.warning("Returning partial response despite hitting iteration limit")
 
         logger.debug(
             "Interaction loop completed",
