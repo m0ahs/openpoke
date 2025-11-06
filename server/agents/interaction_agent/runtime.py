@@ -44,7 +44,7 @@ class _LoopSummary:
 class InteractionAgentRuntime:
     """Manages the interaction agent's request processing."""
 
-    MAX_TOOL_ITERATIONS = 3  # STRICT limit: acknowledge → delegate → finalize ONLY
+    MAX_TOOL_ITERATIONS = 3  # STRICT: 1=delegate, 2=send result, 3=finalize
 
     # Initialize interaction agent runtime with settings and service dependencies
     def __init__(self) -> None:
@@ -412,14 +412,31 @@ class InteractionAgentRuntime:
                 }
                 messages.append(tool_message)
         else:
-            # Auto-learn from this error
+            # Reached iteration limit - log and return what we have
             from ...services.lessons_learned import get_lessons_service
             lessons_service = get_lessons_service()
             lessons_service.auto_learn_from_error(
                 "RuntimeError",
                 "Reached tool iteration limit without final response"
             )
-            raise RuntimeError("Reached tool iteration limit without final response")
+
+            logger.error(
+                "Reached MAX_TOOL_ITERATIONS - forcing termination",
+                extra={
+                    "iterations": self.MAX_TOOL_ITERATIONS,
+                    "tool_calls_made": len(summary.tool_names),
+                    "user_messages_sent": len(summary.user_messages),
+                    "last_content": summary.last_assistant_text[:200] if summary.last_assistant_text else None
+                }
+            )
+
+            # If we have ANYTHING to show the user, show it
+            # Otherwise we'll raise the error and let the caller handle it
+            if summary.user_messages or summary.last_assistant_text:
+                logger.warning("Returning partial response despite hitting iteration limit")
+                break  # Exit loop and return what we have
+            else:
+                raise RuntimeError("Reached tool iteration limit without final response")
 
         logger.debug(
             "Interaction loop completed",

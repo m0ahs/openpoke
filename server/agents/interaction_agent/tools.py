@@ -220,6 +220,15 @@ async def send_message_to_user(message: str) -> ToolResult:
     from .context import get_telegram_chat_id
     from ...services.telegram_service import get_telegram_service
 
+    # CRITICAL: Enforce 500 char limit HARD at runtime
+    MAX_MESSAGE_LENGTH = 500
+    if len(message) > MAX_MESSAGE_LENGTH:
+        logger.warning(
+            f"Message too long ({len(message)} chars), truncating to {MAX_MESSAGE_LENGTH}",
+            extra={"original_length": len(message)}
+        )
+        message = message[:MAX_MESSAGE_LENGTH - 50] + "\n\n(Tronqué - trop long)"
+
     log = get_conversation_log()
     await log.record_reply(message)
 
@@ -245,11 +254,20 @@ async def send_message_to_user(message: str) -> ToolResult:
         if sent:
             # Cache this message to prevent duplicates
             _last_telegram_messages[chat_id] = message
+            logger.info(
+                f"✅ Telegram message sent to {chat_id}",
+                extra={"message_length": len(message)}
+            )
         else:
-            logger.warning(
-                "Failed to send message to Telegram",
+            logger.error(
+                f"❌ Failed to send Telegram message to {chat_id}",
                 extra={"chat_id": chat_id, "message_preview": message[:100]}
             )
+    else:
+        logger.warning(
+            "⚠️ No Telegram chat_id - message will NOT be sent to Telegram!",
+            extra={"message_preview": message[:100]}
+        )
 
     return ToolResult(
         success=True,
