@@ -96,6 +96,10 @@ def build_system_prompt() -> str:
     if user_context:
         profile_section = "\n\n# USER PROFILE\n\nYou have access to the following information about the user:\n\n" + "\n".join(user_context) + "\n\nUse this information to personalize your responses when relevant. Remember these details naturally without explicitly mentioning you have this information unless necessary."
         sections.append(profile_section)
+    else:
+        # When no profile exists, guide user to add their info
+        no_profile_section = "\n\n# USER PROFILE\n\n⚠️ **NO USER PROFILE DATA AVAILABLE**\n\nThe user hasn't added their profile information yet.\n\n**When the user asks what you know about them:**\n- Tell them you don't have any info yet\n- Direct them to add their profile at: https://alyn.up.railway.app/\n- Explain that adding their info (name, date of birth, location) helps you personalize responses\n\nExample response: \"Je n'ai pas encore d'infos sur toi. Tu peux ajouter ton profil (nom, date de naissance, localisation) sur https://alyn.up.railway.app/ pour que je personnalise mes réponses.\""
+        sections.append(no_profile_section)
 
     return "\n\n".join(sections)
 
