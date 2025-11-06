@@ -18,8 +18,10 @@ const VENV_PYTHON = join(__dirname, '../../../.venv/bin/python');
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 // Configuration backend : LOCAL (default) ou RAILWAY
-const BACKEND_MODE = process.env.BACKEND_MODE || 'LOCAL'; // 'LOCAL' ou 'RAILWAY'
-const BACKEND_URL = process.env.BACKEND_URL || 'https://alyn-backend.up.railway.app';
+// On Railway, even if BACKEND_MODE=LOCAL, we use HTTP to localhost instead of spawn
+const IS_RAILWAY = process.env.RAILWAY_ENVIRONMENT !== undefined;
+const BACKEND_MODE = IS_RAILWAY ? 'RAILWAY' : (process.env.BACKEND_MODE || 'LOCAL');
+const BACKEND_URL = IS_RAILWAY ? 'http://localhost:8001' : (process.env.BACKEND_URL || 'https://alyn-backend.up.railway.app');
 const BACKEND_ENDPOINT = process.env.BACKEND_ENDPOINT || '/api/v1/telegram/message';
 
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
