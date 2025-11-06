@@ -55,26 +55,41 @@ async def lifespan(app: FastAPI):
     logger.info("=" * 80)
     logger.info("LIFESPAN STARTUP TRIGGERED")
     logger.info("=" * 80)
+
+    # Initialize database FIRST
+    try:
+        from .database import check_db_connection, init_db
+        logger.info("Initializing database...")
+
+        if check_db_connection():
+            init_db()
+            logger.info("✅ Database initialized successfully")
+        else:
+            logger.warning("⚠️ Database connection failed - some features may not work")
+    except Exception as e:
+        logger.error(f"❌ Database initialization failed: {e}")
+        # Don't crash - fallback to JSON if DB unavailable
+
     logger.info("Starting background services")
-    
+
     try:
         scheduler = get_trigger_scheduler()
         logger.info(f"Scheduler instance obtained: {scheduler}")
         await scheduler.start()
         logger.info("Trigger scheduler started successfully")
-        
+
         watcher = get_important_email_watcher()
         logger.info(f"Email watcher instance obtained: {watcher}")
         await watcher.start()
         logger.info("Email watcher started successfully")
-        
+
         logger.info("=" * 80)
         logger.info("ALL BACKGROUND SERVICES STARTED SUCCESSFULLY")
         logger.info("=" * 80)
     except Exception as e:
         logger.exception(f"CRITICAL ERROR during startup: {e}")
         raise
-    
+
     yield
     
     # Shutdown: Gracefully stop background services

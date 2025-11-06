@@ -1,79 +1,151 @@
-"""User profile storage and retrieval - using centralized DataManager."""
+"""
+User profile storage - PostgreSQL with JSON fallback.
 
+Automatically uses PostgreSQL if DATABASE_URL is set, otherwise falls back to JSON.
+This provides transparent migration path from JSON to database.
+"""
+
+import os
 from typing import Dict, Optional
 
-from .data_manager import get_data_manager
+from ..logging_config import logger
 
-PROFILE_FILENAME = "user_profile.json"
+# Check if DATABASE_URL is available to determine storage backend
+_DATABASE_URL = os.getenv("DATABASE_URL")
+_use_database = bool(_DATABASE_URL)
 
+if _use_database:
+    logger.info("✅ Using PostgreSQL for user profile storage")
 
-class UserProfile:
-    """
-    User profile storage using Railway Volume DataManager.
+    # Import database-backed implementation
+    from sqlalchemy.orm import Session
 
-    Features:
-    - Automatic backups before changes
-    - Atomic writes (no corruption)
-    - Thread-safe operations
-    - Automatic validation
-    """
+    from ..database import SessionLocal
+    from ..models import User
 
-    def __init__(self):
-        self._data_manager = get_data_manager()
+    class UserProfile:
+        """PostgreSQL-backed user profile storage."""
 
-    def save(self, profile: Dict[str, str]) -> None:
-        """
-        Save user profile to disk with automatic backup.
+        def _get_or_create_user(self, db: Session) -> User:
+            """Get or create the default user (single-user mode)."""
+            user = db.query(User).filter(User.id == 1).first()
+            if not user:
+                user = User(id=1)
+                db.add(user)
+                db.commit()
+                db.refresh(user)
+                logger.info("✅ Created default user in database")
+            return user
 
-        Args:
-            profile: Dictionary containing user profile data
-        """
-        self._data_manager.save_json(PROFILE_FILENAME, profile, backup=True)
+        def save(self, profile: Dict[str, str]) -> None:
+            """Save profile to PostgreSQL."""
+            db = SessionLocal()
+            try:
+                user = self._get_or_create_user(db)
+                user.user_name = profile.get("userName", user.user_name)
+                user.birth_date = profile.get("birthDate", user.birth_date)
+                user.location = profile.get("location", user.location)
+                if "timezone" in profile:
+                    user.timezone = profile["timezone"]
+                db.commit()
+                logger.info("💾 Profile saved to PostgreSQL", extra={"user_id": user.id})
+            except Exception as exc:
+                db.rollback()
+                logger.error(f"❌ Failed to save profile: {exc}")
+                raise
+            finally:
+                db.close()
 
-    def load(self) -> Dict[str, str]:
-        """
-        Load user profile from disk.
+        def load(self) -> Dict[str, str]:
+            """Load profile from PostgreSQL."""
+            db = SessionLocal()
+            try:
+                user = self._get_or_create_user(db)
+                return {
+                    "userName": user.user_name or "",
+                    "birthDate": user.birth_date or "",
+                    "location": user.location or "",
+                    "timezone": user.timezone or "",
+                }
+            except Exception as exc:
+                logger.error(f"❌ Failed to load profile: {exc}")
+                return {}
+            finally:
+                db.close()
 
-        Returns:
-            Dictionary with profile data, or empty dict if not found
-        """
-        return self._data_manager.load_json(PROFILE_FILENAME)
+        def get_field(self, key: str) -> Optional[str]:
+            """Get a single field."""
+            profile = self.load()
+            return profile.get(key)
 
-    def get_field(self, key: str) -> Optional[str]:
-        """
-        Get a single field from the profile.
+        def update_field(self, key: str, value: str) -> None:
+            """Update a single field."""
+            profile = self.load()
+            profile[key] = value
+            self.save(profile)
 
-        Args:
-            key: Field name to retrieve
+        def clear(self) -> None:
+            """Clear the profile."""
+            db = SessionLocal()
+            try:
+                user = db.query(User).filter(User.id == 1).first()
+                if user:
+                    user.user_name = None
+                    user.birth_date = None
+                    user.location = None
+                    user.timezone = None
+                    db.commit()
+                    logger.info("✅ Profile cleared")
+            except Exception as exc:
+                db.rollback()
+                logger.error(f"❌ Failed to clear profile: {exc}")
+                raise
+            finally:
+                db.close()
 
-        Returns:
-            Field value or None if not found
-        """
-        profile = self.load()
-        return profile.get(key)
+        def restore_from_backup(self) -> bool:
+            """Not applicable with PostgreSQL."""
+            logger.warning("restore_from_backup not applicable with PostgreSQL")
+            return False
 
-    def update_field(self, key: str, value: str) -> None:
-        """
-        Update a single field in the profile.
+else:
+    logger.warning("⚠️ DATABASE_URL not set - using JSON fallback storage")
 
-        Args:
-            key: Field name to update
-            value: New value
-        """
-        self._data_manager.update_field(PROFILE_FILENAME, key, value, backup=True)
+    # Fallback to JSON-based storage
+    from .data_manager import get_data_manager
 
-    def clear(self) -> None:
-        """Clear the profile (with automatic backup)."""
-        self._data_manager.delete_file(PROFILE_FILENAME, backup=True)
+    PROFILE_FILENAME = "user_profile.json"
 
-    def restore_from_backup(self) -> bool:
-        """
-        Restore profile from most recent backup.
+    class UserProfile:
+        """JSON file-based user profile storage (fallback)."""
 
-        Returns:
-            True if successful, False if no backup exists
-        """
-        return self._data_manager.restore_from_backup(PROFILE_FILENAME)
+        def __init__(self):
+            self._data_manager = get_data_manager()
+
+        def save(self, profile: Dict[str, str]) -> None:
+            """Save profile to JSON file."""
+            self._data_manager.save_json(PROFILE_FILENAME, profile, backup=True)
+
+        def load(self) -> Dict[str, str]:
+            """Load profile from JSON file."""
+            return self._data_manager.load_json(PROFILE_FILENAME)
+
+        def get_field(self, key: str) -> Optional[str]:
+            """Get a single field."""
+            profile = self.load()
+            return profile.get(key)
+
+        def update_field(self, key: str, value: str) -> None:
+            """Update a single field."""
+            self._data_manager.update_field(PROFILE_FILENAME, key, value, backup=True)
+
+        def clear(self) -> None:
+            """Clear the profile."""
+            self._data_manager.delete_file(PROFILE_FILENAME, backup=True)
+
+        def restore_from_backup(self) -> bool:
+            """Restore from JSON backup."""
+            return self._data_manager.restore_from_backup(PROFILE_FILENAME)
 
 
 # Singleton instance
