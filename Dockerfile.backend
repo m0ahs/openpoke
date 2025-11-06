@@ -16,8 +16,9 @@ COPY server/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy and install Node.js dependencies (for Telegram watcher)
-COPY package.json package-lock.json* ./
-RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+# Use package.railway.json instead of package.json to avoid macOS-only dependencies
+COPY package.railway.json ./package.json
+RUN npm install
 
 # Copy server code
 COPY server/ ./server/
