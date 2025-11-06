@@ -26,6 +26,33 @@ class TelegramService:
             self._client = httpx.AsyncClient(timeout=10.0)
         return self._client
 
+    async def send_typing_action(self, chat_id: str) -> bool:
+        """
+        Send typing action to show the bot is processing.
+
+        Args:
+            chat_id: Telegram chat ID
+
+        Returns:
+            True if action was sent successfully, False otherwise
+        """
+        if not self.bot_token:
+            return False
+
+        try:
+            client = await self._get_client()
+            response = await client.post(
+                f"{self.base_url}/sendChatAction",
+                json={
+                    "chat_id": chat_id,
+                    "action": "typing",
+                }
+            )
+            return response.status_code == 200
+        except Exception:
+            # Typing action is not critical, don't log errors
+            return False
+
     async def send_message(
         self,
         chat_id: str,
@@ -46,6 +73,15 @@ class TelegramService:
         if not self.bot_token:
             logger.error("Cannot send Telegram message - bot token not configured")
             return False
+
+        # Telegram max message length is 4096 characters
+        MAX_LENGTH = 4000  # Leave some margin
+        if len(text) > MAX_LENGTH:
+            logger.warning(
+                f"Message too long ({len(text)} chars), truncating to {MAX_LENGTH}",
+                extra={"chat_id": chat_id}
+            )
+            text = text[:MAX_LENGTH - 50] + "\n\n...(message tronqué car trop long)"
 
         try:
             client = await self._get_client()

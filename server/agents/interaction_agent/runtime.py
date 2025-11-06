@@ -412,6 +412,13 @@ class InteractionAgentRuntime:
                 }
                 messages.append(tool_message)
         else:
+            # Auto-learn from this error
+            from ...services.lessons_learned import get_lessons_service
+            lessons_service = get_lessons_service()
+            lessons_service.auto_learn_from_error(
+                "RuntimeError",
+                "Reached tool iteration limit without final response"
+            )
             raise RuntimeError("Reached tool iteration limit without final response")
 
         logger.debug(
