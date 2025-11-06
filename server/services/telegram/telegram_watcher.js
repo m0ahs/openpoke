@@ -1,5 +1,5 @@
 // Telegram Watcher for Seline
-// Remplace iMessage par Telegram pour la communication avec le backend Python
+// Supports both LOCAL (Python script) and RAILWAY (HTTP API) backends
 
 import TelegramBot from 'node-telegram-bot-api';
 import { spawn } from 'child_process';
@@ -15,11 +15,16 @@ const __dirname = dirname(__filename);
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const PYTHON_BRIDGE_PATH = join(__dirname, '../../../telegram_bridge.py');
 const VENV_PYTHON = join(__dirname, '../../../.venv/bin/python');
-const CHAT_ID = process.env.TELEGRAM_CHAT_ID; // à définir dans .env
+const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+
+// Configuration backend : LOCAL (default) ou RAILWAY
+const BACKEND_MODE = process.env.BACKEND_MODE || 'LOCAL'; // 'LOCAL' ou 'RAILWAY'
+const BACKEND_URL = process.env.BACKEND_URL || 'https://alyn-backend.up.railway.app';
+const BACKEND_ENDPOINT = process.env.BACKEND_ENDPOINT || '/api/v1/chat/send';
 
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 
-console.log('🚀 Seline Telegram Watcher initialisé');
+console.log(`🚀 Seline Telegram Watcher initialisé (mode: ${BACKEND_MODE})${BACKEND_MODE === 'RAILWAY' ? ` - ${BACKEND_URL}` : ''}`);
 
 bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
@@ -45,7 +50,16 @@ bot.on('message', async (msg) => {
 
   startTyping();
 
-  // Transmet au backend Python en tant que module
+  // Choix du backend selon le mode configuré
+  if (BACKEND_MODE === 'RAILWAY') {
+    await handleRailwayBackend(chatId, text, stopTyping);
+  } else {
+    await handleLocalBackend(chatId, text, stopTyping);
+  }
+});
+
+// Mode LOCAL : Lance le script Python localement
+async function handleLocalBackend(chatId, text, stopTyping) {
   const pythonProcess = spawn(VENV_PYTHON, [
     PYTHON_BRIDGE_PATH,
     '--sender', chatId,
@@ -145,11 +159,68 @@ bot.on('message', async (msg) => {
       disable_notification: false
     });
   });
-});
+}
+
+// Mode RAILWAY : Appelle l'API HTTP du backend Railway
+async function handleRailwayBackend(chatId, text, stopTyping) {
+  const url = `${BACKEND_URL}${BACKEND_ENDPOINT}`;
+  const timeout = 120000; // 2 minutes
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'text/plain, */*'
+      },
+      body: JSON.stringify({
+        system: '',
+        messages: [
+          { role: 'user', content: text }
+        ],
+        stream: false
+      }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+    stopTyping();
+
+    const responseText = await response.text();
+
+    if (response.ok && responseText.trim()) {
+      bot.sendMessage(chatId, responseText, {
+        disable_notification: false
+      });
+      console.log(`✅ Réponse envoyée sur Telegram (${responseText.length} caractères)`);
+    } else {
+      console.error(`❌ Erreur HTTP (${response.status}):`, responseText.substring(0, 200));
+      bot.sendMessage(chatId, 'Désolé, une erreur s\'est produite lors du traitement de ton message.', {
+        disable_notification: false
+      });
+    }
+  } catch (err) {
+    stopTyping();
+    if (err.name === 'AbortError') {
+      console.error('⏱️  Timeout: le backend Railway a pris plus de 2 minutes');
+      bot.sendMessage(chatId, 'Désolé, le traitement a pris trop de temps. Réessaie avec un message plus court.', {
+        disable_notification: false
+      });
+    } else {
+      console.error('❌ Erreur lors de la requête Railway:', err);
+      bot.sendMessage(chatId, 'Désolé, impossible de contacter le serveur. Réessaie dans quelques instants.', {
+        disable_notification: false
+      });
+    }
+  }
+}
 
 // Arrêt propre
 process.on('SIGINT', () => {
-        // PYTHON_BRIDGE_PATH, // Suppression de la référence à iMessage
+  console.log('\n\n👋 Arrêt du Telegram Watcher...');
   process.exit(0);
 });
 
