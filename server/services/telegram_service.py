@@ -1,5 +1,6 @@
 """Telegram service for sending messages asynchronously."""
 
+import asyncio
 import os
 from typing import Optional
 
@@ -60,7 +61,7 @@ class TelegramService:
         parse_mode: str = "Markdown"
     ) -> bool:
         """
-        Send a message to a Telegram chat.
+        Send a message to a Telegram chat. Splits long messages into multiple shorter ones.
 
         Args:
             chat_id: Telegram chat ID
@@ -68,21 +69,80 @@ class TelegramService:
             parse_mode: Message formatting (Markdown or HTML)
 
         Returns:
-            True if message was sent successfully, False otherwise
+            True if all messages were sent successfully, False otherwise
         """
         if not self.bot_token:
             logger.error("Cannot send Telegram message - bot token not configured")
             return False
 
-        # Telegram max message length is 4096 characters
-        MAX_LENGTH = 4000  # Leave some margin
-        if len(text) > MAX_LENGTH:
-            logger.warning(
-                f"Message too long ({len(text)} chars), truncating to {MAX_LENGTH}",
-                extra={"chat_id": chat_id}
-            )
-            text = text[:MAX_LENGTH - 50] + "\n\n...(message tronqué car trop long)"
+        # Split long messages into chunks of max 800 chars for better UX
+        MAX_CHUNK_SIZE = 800
 
+        if len(text) <= MAX_CHUNK_SIZE:
+            # Short message - send as is
+            return await self._send_single_message(chat_id, text, parse_mode)
+
+        # Long message - split into multiple messages
+        chunks = self._split_message(text, MAX_CHUNK_SIZE)
+        logger.info(
+            f"Splitting long message into {len(chunks)} chunks",
+            extra={"chat_id": chat_id, "total_length": len(text)}
+        )
+
+        all_success = True
+        for i, chunk in enumerate(chunks):
+            if i > 0:
+                # Small delay between messages to avoid rate limiting
+                await asyncio.sleep(0.5)
+
+            success = await self._send_single_message(chat_id, chunk, parse_mode)
+            if not success:
+                all_success = False
+
+        return all_success
+
+    def _split_message(self, text: str, max_size: int) -> list[str]:
+        """Split a message into chunks, trying to break at paragraph or sentence boundaries."""
+        if len(text) <= max_size:
+            return [text]
+
+        chunks = []
+        remaining = text
+
+        while remaining:
+            if len(remaining) <= max_size:
+                chunks.append(remaining)
+                break
+
+            # Try to split at paragraph boundary
+            split_at = remaining.rfind('\n\n', 0, max_size)
+            if split_at == -1:
+                # Try to split at line break
+                split_at = remaining.rfind('\n', 0, max_size)
+            if split_at == -1:
+                # Try to split at sentence
+                split_at = remaining.rfind('. ', 0, max_size)
+            if split_at == -1:
+                # Last resort: split at space
+                split_at = remaining.rfind(' ', 0, max_size)
+            if split_at == -1:
+                # Force split
+                split_at = max_size
+
+            chunk = remaining[:split_at].strip()
+            if chunk:
+                chunks.append(chunk)
+            remaining = remaining[split_at:].strip()
+
+        return chunks
+
+    async def _send_single_message(
+        self,
+        chat_id: str,
+        text: str,
+        parse_mode: str
+    ) -> bool:
+        """Send a single message to Telegram."""
         try:
             client = await self._get_client()
             response = await client.post(
