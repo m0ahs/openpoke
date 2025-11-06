@@ -1,10 +1,19 @@
-"""Lessons Learned system for Seline to improve from mistakes - using DataManager."""
+"""Lessons Learned system for Seline to improve from mistakes - PostgreSQL with JSON fallback."""
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from ..logging_config import logger
 from .data_manager import get_data_manager
+
+# PostgreSQL database imports
+try:
+    from ..database import SessionLocal
+    from ..db_models import LessonLearned
+    _USE_DATABASE = True
+except ImportError:
+    _USE_DATABASE = False
+    logger.warning("Database not available for lessons persistence")
 
 LESSONS_FILENAME = "lessons_learned.json"
 
@@ -22,21 +31,39 @@ class LessonsLearnedService:
     def __init__(self):
         """Initialize the lessons learned service."""
         self._data_manager = get_data_manager()
+        self._use_db = _USE_DATABASE
 
-        # Initialize file if it doesn't exist
-        lessons = self._load_lessons()
-        if not lessons:
-            self._save_lessons([])
+        if self._use_db:
+            logger.info("✅ Using PostgreSQL for lessons_learned storage")
+        else:
+            logger.warning("⚠️ Using JSON fallback for lessons_learned storage")
+            # Initialize file if it doesn't exist
+            lessons = self._load_lessons()
+            if not lessons:
+                self._save_lessons([])
 
     def _load_lessons(self) -> List[Dict[str, Any]]:
-        """Load lessons from file."""
-        data = self._data_manager.load_json(LESSONS_FILENAME)
-        # Support both dict format (with 'lessons' key) and list format
-        if isinstance(data, dict):
-            return data.get("lessons", [])
-        elif isinstance(data, list):
-            return data
-        return []
+        """Load lessons from PostgreSQL or JSON fallback."""
+        if self._use_db:
+            try:
+                db = SessionLocal()
+                try:
+                    lessons_db = db.query(LessonLearned).all()
+                    return [lesson.to_dict() for lesson in lessons_db]
+                finally:
+                    db.close()
+            except Exception as exc:
+                logger.error(f"❌ Failed to load lessons from database: {exc}")
+                return []
+        else:
+            # JSON fallback
+            data = self._data_manager.load_json(LESSONS_FILENAME)
+            # Support both dict format (with 'lessons' key) and list format
+            if isinstance(data, dict):
+                return data.get("lessons", [])
+            elif isinstance(data, list):
+                return data
+            return []
 
     def _save_lessons(self, lessons: List[Dict[str, Any]]) -> None:
         """Save lessons to file."""
@@ -64,39 +91,80 @@ class LessonsLearnedService:
             solution: How to solve or avoid the problem
             context: Optional additional context
         """
-        lessons = self._load_lessons()
+        if self._use_db:
+            # PostgreSQL mode
+            try:
+                db = SessionLocal()
+                try:
+                    # Check if similar lesson exists
+                    existing = db.query(LessonLearned).filter(
+                        LessonLearned.category == category,
+                        LessonLearned.problem == problem
+                    ).first()
 
-        lesson = {
-            "category": category,
-            "problem": problem,
-            "solution": solution,
-            "context": context,
-            "learned_at": datetime.utcnow().isoformat(),
-            "occurrences": 1
-        }
+                    if existing:
+                        # Increment occurrences
+                        existing.occurrences += 1
+                        existing.last_seen = datetime.utcnow()
+                        db.commit()
+                        logger.info(
+                            f"💾 Incremented existing lesson in category '{category}'",
+                            extra={"occurrences": existing.occurrences}
+                        )
+                    else:
+                        # Add new lesson
+                        new_lesson = LessonLearned(
+                            category=category,
+                            problem=problem,
+                            solution=solution,
+                            context=context,
+                            occurrences=1
+                        )
+                        db.add(new_lesson)
+                        db.commit()
+                        logger.info(
+                            f"💾 New lesson learned in category '{category}'",
+                            extra={"problem": problem[:100]}
+                        )
+                finally:
+                    db.close()
+            except Exception as exc:
+                logger.error(f"❌ Failed to add lesson to database: {exc}")
+        else:
+            # JSON fallback mode
+            lessons = self._load_lessons()
 
-        # Check if similar lesson exists
-        for existing in lessons:
-            if (existing["category"] == category and
-                existing["problem"].lower() == problem.lower()):
-                # Increment occurrences instead of adding duplicate
-                existing["occurrences"] = existing.get("occurrences", 1) + 1
-                existing["last_seen"] = datetime.utcnow().isoformat()
-                logger.info(
-                    f"Incremented existing lesson in category '{category}'",
-                    extra={"occurrences": existing["occurrences"]}
-                )
-                self._save_lessons(lessons)
-                return
+            lesson = {
+                "category": category,
+                "problem": problem,
+                "solution": solution,
+                "context": context,
+                "learned_at": datetime.utcnow().isoformat(),
+                "occurrences": 1
+            }
 
-        # Add new lesson
-        lessons.append(lesson)
-        self._save_lessons(lessons)
+            # Check if similar lesson exists
+            for existing in lessons:
+                if (existing["category"] == category and
+                    existing["problem"].lower() == problem.lower()):
+                    # Increment occurrences instead of adding duplicate
+                    existing["occurrences"] = existing.get("occurrences", 1) + 1
+                    existing["last_seen"] = datetime.utcnow().isoformat()
+                    logger.info(
+                        f"Incremented existing lesson in category '{category}'",
+                        extra={"occurrences": existing["occurrences"]}
+                    )
+                    self._save_lessons(lessons)
+                    return
 
-        logger.info(
-            f"New lesson learned in category '{category}'",
-            extra={"problem": problem[:100]}
-        )
+            # Add new lesson
+            lessons.append(lesson)
+            self._save_lessons(lessons)
+
+            logger.info(
+                f"New lesson learned in category '{category}'",
+                extra={"problem": problem[:100]}
+            )
 
     def get_lessons(
         self,
