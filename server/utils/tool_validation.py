@@ -76,6 +76,9 @@ def get_interaction_tool_names() -> Set[str]:
         "add_lesson",
         "get_lessons",
         "delete_lesson",
+        "add_memory",
+        "get_memories",
+        "delete_memory",
     }
 
 

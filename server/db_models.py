@@ -7,7 +7,7 @@ SQLAlchemy ORM models for user data, conversation history, etc.
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String, Text
 from sqlalchemy.sql import func
 
 from .database import Base
@@ -144,4 +144,48 @@ class LessonLearned(Base):
         }
 
 
-__all__ = ["User", "ConversationHistory", "LessonLearned"]
+class UserMemory(Base):
+    """
+    User memory model (Mem0-like contextual memory).
+
+    Stores important contextual facts about the user for personalized interactions.
+    Examples: relationships, preferences, work context, habits, ongoing projects.
+    """
+
+    __tablename__ = "user_memories"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id = Column(Integer, index=True, default=1, nullable=False)  # Foreign key to users.id
+
+    # Memory content
+    category = Column(String(50), index=True, nullable=False)  # relationship, preference, work, habit, project
+    key = Column(String(200), nullable=False)  # Unique identifier within category (e.g., "colleague_theo")
+    value = Column(Text, nullable=False)  # The actual memory content
+    context = Column(Text, nullable=True)  # Optional additional context
+
+    # Metadata
+    confidence = Column(Float, default=1.0, nullable=False)  # Confidence level (0.0-1.0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    last_accessed = Column(DateTime(timezone=True), nullable=True)  # For prioritization
+
+    def __repr__(self) -> str:
+        return f"<UserMemory(id={self.id}, category={self.category}, key={self.key})>"
+
+    def to_dict(self) -> dict:
+        """Convert memory to dictionary."""
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "category": self.category,
+            "key": self.key,
+            "value": self.value,
+            "context": self.context,
+            "confidence": self.confidence,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "last_accessed": self.last_accessed.isoformat() if self.last_accessed else None,
+        }
+
+
+__all__ = ["User", "ConversationHistory", "LessonLearned", "UserMemory"]
