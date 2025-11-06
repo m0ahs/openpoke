@@ -79,7 +79,10 @@ export default function Page() {
   useEffect(() => {
     const detectAndStoreTimezone = async () => {
       // Only run if timezone not already stored
-      if (settings.timezone) return;
+      const existingTimezone = typeof window !== 'undefined'
+        ? localStorage.getItem('user_timezone')
+        : null;
+      if (existingTimezone) return;
       
       try {
         const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -92,8 +95,13 @@ export default function Page() {
         });
         
         if (response.ok) {
-          // Update local settings
-          setSettings({ ...settings, timezone: browserTimezone });
+          // Update localStorage only, don't persist the whole profile
+          // (profile might not be loaded yet from backend)
+          try {
+            localStorage.setItem('user_timezone', browserTimezone);
+          } catch {
+            console.debug('Failed to save timezone to localStorage');
+          }
         }
       } catch (error) {
         // Fail silently - timezone detection is not critical
@@ -102,7 +110,8 @@ export default function Page() {
     };
 
     void detectAndStoreTimezone();
-  }, [settings, setSettings]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Run once on mount
 
 
   useEffect(() => {
