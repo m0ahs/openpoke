@@ -32,37 +32,24 @@ console.log(`🚀 Seline Telegram Watcher initialisé (mode: ${BACKEND_MODE})${B
 bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text;
+
+  // Ignore non-text messages
+  if (!text) {
+    return;
+  }
+
   console.log(`📨 Message Telegram reçu: ${text}`);
-
-  // Démarre l'indicateur "typing" immédiatement
-  let typingInterval = null;
-  const startTyping = () => {
-    bot.sendChatAction(chatId, 'typing');
-    // Renouvelle l'indicateur toutes les 4 secondes (l'indicateur dure 5s max)
-    typingInterval = setInterval(() => {
-      bot.sendChatAction(chatId, 'typing');
-    }, 4000);
-  };
-
-  const stopTyping = () => {
-    if (typingInterval) {
-      clearInterval(typingInterval);
-      typingInterval = null;
-    }
-  };
-
-  startTyping();
 
   // Choix du backend selon le mode configuré
   if (BACKEND_MODE === 'RAILWAY') {
-    await handleRailwayBackend(chatId, text, stopTyping);
+    await handleRailwayBackend(chatId, text);
   } else {
-    await handleLocalBackend(chatId, text, stopTyping);
+    await handleLocalBackend(chatId, text);
   }
 });
 
 // Mode LOCAL : Lance le script Python localement
-async function handleLocalBackend(chatId, text, stopTyping) {
+async function handleLocalBackend(chatId, text) {
   const pythonProcess = spawn(VENV_PYTHON, [
     PYTHON_BRIDGE_PATH,
     '--sender', chatId,
@@ -81,15 +68,14 @@ async function handleLocalBackend(chatId, text, stopTyping) {
   const timeoutId = setTimeout(() => {
     if (!processEnded) {
       processEnded = true;
-      stopTyping();
       pythonProcess.kill('SIGTERM'); // Tente un arrêt propre
-      
+
       setTimeout(() => {
         if (!pythonProcess.killed) {
           pythonProcess.kill('SIGKILL'); // Force l'arrêt si nécessaire
         }
       }, 5000);
-      
+
       console.error('⏱️  Timeout: le processus Python a pris plus de 2 minutes');
       bot.sendMessage(chatId, 'Désolé, le traitement a pris trop de temps. Réessaie avec un message plus court ou reformulé.', {
         disable_notification: false
@@ -108,10 +94,9 @@ async function handleLocalBackend(chatId, text, stopTyping) {
 
   pythonProcess.on('close', (code) => {
     if (processEnded) return; // Déjà géré par le timeout
-    
+
     processEnded = true;
     clearTimeout(timeoutId);
-    stopTyping(); // Arrête l'indicateur typing
     
     const response = stdout.trim();
     // Ne considère comme erreur que les vraies erreurs (traceback, exceptions)
@@ -164,10 +149,11 @@ async function handleLocalBackend(chatId, text, stopTyping) {
   });
 }
 
-// Mode RAILWAY : Appelle l'API HTTP du backend Railway
-async function handleRailwayBackend(chatId, text, stopTyping) {
+// Mode RAILWAY : Appelle l'API HTTP du backend Railway (async processing)
+// The backend will push responses directly to Telegram as they become available
+async function handleRailwayBackend(chatId, text) {
   const url = `${BACKEND_URL}${BACKEND_ENDPOINT}`;
-  const timeout = 120000; // 2 minutes
+  const timeout = 10000; // 10 seconds - just for the initial request acceptance
 
   try {
     const controller = new AbortController();
@@ -187,27 +173,23 @@ async function handleRailwayBackend(chatId, text, stopTyping) {
     });
 
     clearTimeout(timeoutId);
-    stopTyping();
 
-    const responseData = await response.json();
-
-    if (response.ok && responseData.response) {
-      bot.sendMessage(chatId, responseData.response, {
-        disable_notification: false
-      });
-      console.log(`✅ Réponse envoyée sur Telegram (${responseData.response.length} caractères)`);
+    if (response.ok || response.status === 202) {
+      // Message accepted for processing
+      console.log(`✅ Message envoyé au backend (status: ${response.status})`);
+      // Note: Responses will be pushed directly from the Python backend via Telegram API
+      // No need to wait or send anything here
     } else {
-      const errorMsg = responseData.error || responseData.response || 'Une erreur s\'est produite';
-      console.error(`❌ Erreur HTTP (${response.status}):`, errorMsg.substring(0, 200));
-      bot.sendMessage(chatId, errorMsg, {
+      console.error(`❌ Erreur HTTP (${response.status}) lors de l'envoi du message`);
+      // Send error to user
+      bot.sendMessage(chatId, 'Désolé, impossible d\'envoyer ton message au backend.', {
         disable_notification: false
       });
     }
   } catch (err) {
-    stopTyping();
     if (err.name === 'AbortError') {
-      console.error('⏱️  Timeout: le backend Railway a pris plus de 2 minutes');
-      bot.sendMessage(chatId, 'Désolé, le traitement a pris trop de temps. Réessaie avec un message plus court.', {
+      console.error('⏱️  Timeout: le backend n\'a pas accepté le message');
+      bot.sendMessage(chatId, 'Désolé, le serveur ne répond pas. Réessaie dans quelques instants.', {
         disable_notification: false
       });
     } else {

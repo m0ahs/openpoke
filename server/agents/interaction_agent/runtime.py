@@ -70,8 +70,32 @@ class InteractionAgentRuntime:
             )
 
     # Main entry point for processing user messages through the LLM interaction loop
-    async def execute(self, user_message: str) -> InteractionResult:
-        """Handle a user-authored message."""
+    async def execute(
+        self,
+        user_message: str,
+        telegram_chat_id: Optional[str] = None
+    ) -> InteractionResult:
+        """Handle a user-authored message.
+
+        Args:
+            user_message: The user's message to process
+            telegram_chat_id: Optional Telegram chat ID for async push notifications
+        """
+        from .context import set_telegram_chat_id, clear_telegram_chat_id
+
+        # Set up context for async Telegram responses
+        if telegram_chat_id:
+            set_telegram_chat_id(telegram_chat_id)
+
+        try:
+            return await self._execute_internal(user_message)
+        finally:
+            # Always clean up context
+            if telegram_chat_id:
+                clear_telegram_chat_id()
+
+    async def _execute_internal(self, user_message: str) -> InteractionResult:
+        """Internal execution logic after context is set up."""
 
         logger.info(
             "Processing user message",

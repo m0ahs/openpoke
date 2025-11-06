@@ -212,10 +212,23 @@ def remove_agent(agent_name: str, clear_logs: bool = False) -> ToolResult:
 
 # Send immediate message to user and record in conversation history
 async def send_message_to_user(message: str) -> ToolResult:
-    """Record a user-visible reply in the conversation log."""
+    """Record a user-visible reply in the conversation log and send to Telegram if available."""
+    from .context import get_telegram_chat_id
+    from ...services.telegram_service import get_telegram_service
+
     log = get_conversation_log()
     await log.record_reply(message)
 
+    # If we have a Telegram chat ID, send the message immediately
+    chat_id = get_telegram_chat_id()
+    if chat_id:
+        telegram_service = get_telegram_service()
+        sent = await telegram_service.send_message(chat_id, message)
+        if not sent:
+            logger.warning(
+                "Failed to send message to Telegram",
+                extra={"chat_id": chat_id, "message_preview": message[:100]}
+            )
 
     return ToolResult(
         success=True,
