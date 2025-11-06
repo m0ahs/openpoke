@@ -129,6 +129,36 @@ TOOL_SCHEMAS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_lesson",
+            "description": "Add a new lesson learned to the PostgreSQL database. Use this when the user explicitly asks you to remember something, learn from a mistake, or add a lesson for future reference.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "category": {
+                        "type": "string",
+                        "description": "Category of the lesson (e.g., 'email', 'calendar', 'communication', 'user_preference', 'tool_usage')",
+                    },
+                    "problem": {
+                        "type": "string",
+                        "description": "Description of the problem, mistake, or situation that occurred",
+                    },
+                    "solution": {
+                        "type": "string",
+                        "description": "How to avoid or fix this problem in the future, or what to do in similar situations",
+                    },
+                    "context": {
+                        "type": "string",
+                        "description": "Optional context about when/why this lesson is important",
+                    },
+                },
+                "required": ["category", "problem", "solution"],
+                "additionalProperties": False,
+            },
+        },
+    },
 ]
 
 _EXECUTION_BATCH_MANAGER = ExecutionBatchManager()
@@ -315,6 +345,40 @@ async def wait(reason: str) -> ToolResult:
     )
 
 
+# Add a new lesson learned to the PostgreSQL database
+def add_lesson_tool(category: str, problem: str, solution: str, context: Optional[str] = None) -> ToolResult:
+    """Add a new lesson learned to the database when user explicitly requests it."""
+    from ...services.lessons_learned import get_lessons_service
+
+    try:
+        lessons_service = get_lessons_service()
+        lessons_service.add_lesson(category, problem, solution, context)
+
+        logger.info(
+            "✅ Lesson added via tool",
+            extra={"category": category, "problem_preview": problem[:50]}
+        )
+
+        return ToolResult(
+            success=True,
+            payload={
+                "status": "lesson_added",
+                "category": category,
+                "message": f"Lesson ajoutée dans la catégorie '{category}' et sauvegardée dans PostgreSQL."
+            },
+        )
+    except Exception as exc:
+        logger.error(
+            "❌ Failed to add lesson via tool",
+            extra={"error": str(exc), "category": category},
+            exc_info=True
+        )
+        return ToolResult(
+            success=False,
+            payload={"error": f"Failed to add lesson: {str(exc)}"}
+        )
+
+
 # Return predefined tool schemas for LLM function calling
 def get_tool_schemas():
     """Return OpenAI-compatible tool schemas."""
@@ -342,6 +406,8 @@ async def handle_tool_call(name: str, arguments: Any) -> ToolResult:
             return await wait(**args)
         if name == "remove_agent":
             return remove_agent(**args)
+        if name == "add_lesson":
+            return add_lesson_tool(**args)
 
         # Note: Concatenated tool names are now detected earlier in runtime.py
         # This allows us to provide better error messages to the LLM
