@@ -18,6 +18,15 @@ from ..composio_client import (
     normalize_composio_payload,
 )
 
+# PostgreSQL database imports
+try:
+    from ...database import SessionLocal
+    from ...db_models import User
+    _USE_DATABASE = True
+except ImportError:
+    _USE_DATABASE = False
+    logger.warning("Database not available for Gmail persistence")
+
 
 _PROFILE_CACHE: Dict[str, Dict[str, Any]] = {}
 _PROFILE_CACHE_LOCK = threading.Lock()
@@ -97,6 +106,56 @@ def _extract_email(obj: Any) -> Optional[str]:
             if isinstance(current, str) and "@" in current:
                 return current
     return None
+
+
+def _save_gmail_to_db(connected: bool, email: Optional[str], connection_id: Optional[str]) -> None:
+    """Save Gmail connection status to PostgreSQL database."""
+    if not _USE_DATABASE:
+        return
+
+    try:
+        db = SessionLocal()
+        try:
+            # Get or create user with ID=1 (single-user mode)
+            user = db.query(User).filter(User.id == 1).first()
+            if not user:
+                user = User(id=1)
+                db.add(user)
+
+            # Update Gmail fields
+            user.gmail_connected = connected
+            user.gmail_email = email if connected else None
+            user.gmail_connection_id = connection_id if connected else None
+
+            db.commit()
+            logger.info(f"💾 Gmail status saved to PostgreSQL: connected={connected}, email={email}")
+        finally:
+            db.close()
+    except Exception as exc:
+        logger.error(f"❌ Failed to save Gmail status to database: {exc}")
+
+
+def _load_gmail_from_db() -> Dict[str, Any]:
+    """Load Gmail connection status from PostgreSQL database."""
+    if not _USE_DATABASE:
+        return {"connected": False, "email": None, "connection_id": None}
+
+    try:
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter(User.id == 1).first()
+            if user:
+                return {
+                    "connected": user.gmail_connected or False,
+                    "email": user.gmail_email,
+                    "connection_id": user.gmail_connection_id,
+                }
+        finally:
+            db.close()
+    except Exception as exc:
+        logger.error(f"❌ Failed to load Gmail status from database: {exc}")
+
+    return {"connected": False, "email": None, "connection_id": None}
 
 
 def _cache_profile(user_id: str, profile: Dict[str, Any]) -> None:
@@ -283,6 +342,9 @@ def fetch_status(payload: GmailStatusPayload) -> JSONResponse:
 
         _set_active_gmail_user_id(user_id)
 
+        # Save Gmail connection status to PostgreSQL
+        _save_gmail_to_db(connected, email, connection_request_id)
+
         return JSONResponse(
             {
                 "ok": True,
@@ -399,6 +461,10 @@ def disconnect_account(payload: GmailDisconnectPayload) -> JSONResponse:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="; ".join(errors),
         )
+
+    # Clear Gmail connection status from PostgreSQL
+    if removed_ids:
+        _save_gmail_to_db(False, None, None)
 
     response_payload = {
         "ok": True,
