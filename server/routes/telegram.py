@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from ..agents.interaction_agent import InteractionAgentRuntime
 from ..logging_config import logger
 
-router = APIRouter(prefix="/api/v1/telegram", tags=["telegram"])
+router = APIRouter(prefix="/telegram", tags=["telegram"])
 
 
 class TelegramMessageRequest(BaseModel):
