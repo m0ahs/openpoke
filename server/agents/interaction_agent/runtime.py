@@ -44,7 +44,7 @@ class _LoopSummary:
 class InteractionAgentRuntime:
     """Manages the interaction agent's request processing."""
 
-    MAX_TOOL_ITERATIONS = 5  # Reduced from 8 to prevent infinite loops
+    MAX_TOOL_ITERATIONS = 3  # STRICT limit: acknowledge → delegate → finalize ONLY
 
     # Initialize interaction agent runtime with settings and service dependencies
     def __init__(self) -> None:
