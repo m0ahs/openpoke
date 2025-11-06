@@ -75,8 +75,9 @@ class TelegramService:
             logger.error("Cannot send Telegram message - bot token not configured")
             return False
 
-        # Split long messages into chunks of max 800 chars for better UX
-        MAX_CHUNK_SIZE = 800
+        # Split long messages into chunks of max 250 chars for better UX
+        # User prefers 2-3 short messages instead of one long message
+        MAX_CHUNK_SIZE = 250
 
         if len(text) <= MAX_CHUNK_SIZE:
             # Short message - send as is
@@ -114,19 +115,35 @@ class TelegramService:
                 chunks.append(remaining)
                 break
 
-            # Try to split at paragraph boundary
+            # Try to split at natural boundaries (most natural to least)
+            # 1. Paragraph boundary
             split_at = remaining.rfind('\n\n', 0, max_size)
             if split_at == -1:
-                # Try to split at line break
+                # 2. Line break
                 split_at = remaining.rfind('\n', 0, max_size)
             if split_at == -1:
-                # Try to split at sentence
+                # 3. Sentence ending with period
                 split_at = remaining.rfind('. ', 0, max_size)
             if split_at == -1:
-                # Last resort: split at space
+                # 4. Question mark
+                split_at = remaining.rfind('? ', 0, max_size)
+            if split_at == -1:
+                # 5. Exclamation mark
+                split_at = remaining.rfind('! ', 0, max_size)
+            if split_at == -1:
+                # 6. Semicolon or colon
+                for punct in ['; ', ': ']:
+                    split_at = remaining.rfind(punct, 0, max_size)
+                    if split_at != -1:
+                        break
+            if split_at == -1:
+                # 7. Comma (less ideal but still a pause)
+                split_at = remaining.rfind(', ', 0, max_size)
+            if split_at == -1:
+                # 8. Any space
                 split_at = remaining.rfind(' ', 0, max_size)
             if split_at == -1:
-                # Force split
+                # 9. Force split at max_size (last resort)
                 split_at = max_size
 
             chunk = remaining[:split_at].strip()
