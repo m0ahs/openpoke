@@ -24,20 +24,23 @@ def main():
             runtime = InteractionAgentRuntime()
             result = await runtime.execute(user_message=args.text)
 
-            # Affiche la réponse pour le watcher Telegram
-            if result.success and result.response:
-                # Réponse générée avec succès
+            # TOUJOURS envoyer une réponse à l'utilisateur, même en cas d'erreur
+            # Ne sortir avec code 1 que pour les vraies exceptions Python (bloc except)
+
+            # Priorité 1: Réponse générée (succès ou erreur avec message)
+            if result.response and result.response.strip():
                 print(result.response)
-                sys.exit(0)  # Succès : code de sortie 0
+                sys.exit(0)
 
+            # Priorité 2: Erreur mais pas de réponse - générer un message user-friendly
             if not result.success:
-                # Erreur lors du traitement
                 error_msg = result.error or "Une erreur s'est produite"
-                print(f"Erreur: {error_msg}", file=sys.stderr)
-                sys.exit(1)  # Échec : code de sortie 1
+                # Envoyer un message user-friendly au lieu de l'erreur brute
+                user_message = f"Désolé, j'ai rencontré un problème : {error_msg}"
+                print(user_message)
+                sys.exit(0)  # ✅ Sort avec succès car on a répondu à l'utilisateur
 
-            # Cas: succès mais aucune réponse générée (duplicate detector, outil 'wait', etc.)
-            # Pour Telegram, renvoyer un message explicite plutôt que rien.
+            # Priorité 3: Succès mais aucune réponse (duplicate detector, tool 'wait', etc.)
             fallback = (
                 "Je n'ai pas généré de réponse pour ce message. "
                 "Peut-être que c'était un doublon ou qu'un outil silencieux a été utilisé. "
@@ -46,6 +49,7 @@ def main():
             print(fallback)
             sys.exit(0)
         except Exception as e:
+            # Seulement ici on sort avec code 1 : vraies exceptions Python
             import traceback
             traceback.print_exc(file=sys.stderr)
             sys.exit(1)

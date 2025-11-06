@@ -123,7 +123,7 @@ class InteractionAgentRuntime:
             )
             return InteractionResult(
                 success=False,
-                response="",
+                response="Désolé, j'ai eu du mal à comprendre la réponse générée. Peux-tu reformuler ta demande ?",
                 error=f"JSON parsing failed: {str(exc)}",
             )
         except (ValueError, KeyError, TypeError) as exc:
@@ -134,7 +134,7 @@ class InteractionAgentRuntime:
             )
             return InteractionResult(
                 success=False,
-                response="",
+                response="Désolé, j'ai rencontré un problème avec les données. Peux-tu réessayer ?",
                 error=f"Invalid data: {str(exc)}",
             )
         except AgentExecutionError as exc:
@@ -158,23 +158,10 @@ class InteractionAgentRuntime:
             )
             return InteractionResult(
                 success=False,
-                response="",
+                response="Désolé, j'ai rencontré un problème technique. Peux-tu réessayer dans quelques instants ?",
                 error=str(exc),
             )
         except Exception as exc:
-            logger.error(
-                "Interaction agent unexpected error",
-                extra={"error": str(exc), "error_type": type(exc).__name__},
-                exc_info=True,
-            )
-            return InteractionResult(
-                success=False,
-                response="Une erreur inattendue s'est produite lors du traitement du message. Réessaie ou contacte le support.",
-                error=str(exc),
-                execution_agents_used=0,
-            )
-
-        except Exception as exc: # type: ignore
             logger.error(
                 "Interaction agent unexpected error",
                 extra={"error": str(exc), "error_type": type(exc).__name__},
@@ -268,7 +255,7 @@ class InteractionAgentRuntime:
             )
             return InteractionResult(
                 success=False,
-                response="",
+                response="Désolé, j'ai eu du mal à comprendre la réponse de l'agent. Je réessaie.",
                 error=f"JSON parsing failed: {str(exc)}",
             )
         except (ValueError, KeyError, TypeError) as exc:
@@ -279,7 +266,7 @@ class InteractionAgentRuntime:
             )
             return InteractionResult(
                 success=False,
-                response="",
+                response="Désolé, j'ai rencontré un problème avec les données de l'agent.",
                 error=f"Invalid data: {str(exc)}",
             )
         except AgentExecutionError as exc:
@@ -291,7 +278,7 @@ class InteractionAgentRuntime:
             )
             return InteractionResult(
                 success=False,
-                response="",
+                response="Un de mes agents a rencontré un problème. Je réessaie.",
                 error=str(exc),
             )
         except OpenPokeError as exc:
@@ -302,7 +289,7 @@ class InteractionAgentRuntime:
             )
             return InteractionResult(
                 success=False,
-                response="",
+                response="Désolé, j'ai rencontré un problème technique. Peux-tu réessayer ?",
                 error=str(exc),
             )
 
