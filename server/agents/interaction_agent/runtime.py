@@ -84,7 +84,7 @@ class InteractionAgentRuntime:
             logger.info("Duplicate user message detected, skipping processing")
             return InteractionResult(
                 success=True,
-                response="",
+                response="Je n'ai pas généré de réponse pour ce message. Peut-être que c'était un doublon ou que j'ai utilisé un outil silencieux. Réessaie si besoin.",
                 execution_agents_used=0,
             )
 
@@ -111,7 +111,7 @@ class InteractionAgentRuntime:
 
             return InteractionResult(
                 success=True,
-                response=final_response,
+                response=final_response if final_response else "Je n'ai pas généré de réponse pour ce message. Peut-être que c'était un doublon ou que j'ai utilisé un outil silencieux. Réessaie si besoin.",
                 execution_agents_used=len(summary.execution_agents),
             )
 
@@ -146,7 +146,8 @@ class InteractionAgentRuntime:
             )
             return InteractionResult(
                 success=False,
-                response="",
+                response=final_response if 'final_response' in locals() and final_response else "Je n'ai pas généré de réponse pour ce message. Peut-être que c'était un doublon ou que j'ai utilisé un outil silencieux. Réessaie si besoin.", # type: ignore
+                execution_agents_used=len(summary.execution_agents) if 'summary' in locals() else 0, # type: ignore
                 error=str(exc),
             )
         except OpenPokeError as exc:
@@ -159,6 +160,31 @@ class InteractionAgentRuntime:
                 success=False,
                 response="",
                 error=str(exc),
+            )
+        except Exception as exc:
+            logger.error(
+                "Interaction agent unexpected error",
+                extra={"error": str(exc), "error_type": type(exc).__name__},
+                exc_info=True,
+            )
+            return InteractionResult(
+                success=False,
+                response="Une erreur inattendue s'est produite lors du traitement du message. Réessaie ou contacte le support.",
+                error=str(exc),
+                execution_agents_used=0,
+            )
+
+        except Exception as exc: # type: ignore
+            logger.error(
+                "Interaction agent unexpected error",
+                extra={"error": str(exc), "error_type": type(exc).__name__},
+                exc_info=True,
+            )
+            return InteractionResult(
+                success=False,
+                response="Une erreur inattendue s'est produite lors du traitement du message. Réessaie ou contacte le support.",
+                error=str(exc),
+                execution_agents_used=0,
             )
 
     # Handle incoming messages from execution agents and generate appropriate responses

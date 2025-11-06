@@ -9,9 +9,9 @@ from typing import List, Optional
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field, model_validator
 
-# Load environment variables from .env file
+# Load environment variables from .env file, overriding existing ones
 env_path = Path(__file__).parent.parent / ".env"
-load_dotenv(dotenv_path=env_path)
+load_dotenv(dotenv_path=env_path, override=True)
 
 logger = logging.getLogger(__name__)
 

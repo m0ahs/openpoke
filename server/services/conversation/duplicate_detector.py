@@ -6,7 +6,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from ...logging_config import logger
+from server.logging_config import logger
 
 
 @dataclass
