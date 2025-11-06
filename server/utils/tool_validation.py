@@ -74,6 +74,8 @@ def get_interaction_tool_names() -> Set[str]:
         "wait",
         "remove_agent",
         "add_lesson",
+        "get_lessons",
+        "delete_lesson",
     }
 
 

@@ -159,6 +159,45 @@ TOOL_SCHEMAS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_lessons",
+            "description": "Retrieve lessons learned from the PostgreSQL database. Use this when the user asks to see lessons, list what you've learned, or show past mistakes.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "category": {
+                        "type": "string",
+                        "description": "Optional: Filter lessons by category (e.g., 'email', 'calendar'). If not provided, returns all lessons.",
+                    },
+                    "min_occurrences": {
+                        "type": "integer",
+                        "description": "Optional: Minimum number of occurrences to filter by. Defaults to 1 (all lessons).",
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_lesson",
+            "description": "Delete a specific lesson from the PostgreSQL database by its ID. Use this when the user explicitly asks to remove or delete a lesson.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "lesson_id": {
+                        "type": "integer",
+                        "description": "The ID of the lesson to delete (from the lessons_learned table)",
+                    },
+                },
+                "required": ["lesson_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
 ]
 
 _EXECUTION_BATCH_MANAGER = ExecutionBatchManager()
@@ -379,6 +418,105 @@ def add_lesson_tool(category: str, problem: str, solution: str, context: Optiona
         )
 
 
+# Retrieve lessons learned from PostgreSQL database
+def get_lessons_tool(category: Optional[str] = None, min_occurrences: int = 1) -> ToolResult:
+    """Retrieve lessons from the database, optionally filtered by category."""
+    from ...services.lessons_learned import get_lessons_service
+
+    try:
+        lessons_service = get_lessons_service()
+        lessons = lessons_service.get_lessons(category=category, min_occurrences=min_occurrences)
+
+        if not lessons:
+            message = "Aucune lesson trouvée."
+            if category:
+                message = f"Aucune lesson trouvée dans la catégorie '{category}'."
+
+            return ToolResult(
+                success=True,
+                payload={
+                    "status": "no_lessons",
+                    "lessons": [],
+                    "total": 0,
+                    "message": message
+                },
+            )
+
+        logger.info(
+            "✅ Lessons retrieved via tool",
+            extra={"total": len(lessons), "category": category}
+        )
+
+        return ToolResult(
+            success=True,
+            payload={
+                "status": "lessons_found",
+                "lessons": lessons,
+                "total": len(lessons),
+                "message": f"Trouvé {len(lessons)} lesson(s)" + (f" dans la catégorie '{category}'" if category else "")
+            },
+        )
+    except Exception as exc:
+        logger.error(
+            "❌ Failed to retrieve lessons via tool",
+            extra={"error": str(exc), "category": category},
+            exc_info=True
+        )
+        return ToolResult(
+            success=False,
+            payload={"error": f"Failed to retrieve lessons: {str(exc)}"}
+        )
+
+
+# Delete a specific lesson from PostgreSQL database
+def delete_lesson_tool(lesson_id: int) -> ToolResult:
+    """Delete a specific lesson by ID from the database."""
+    from ...services.lessons_learned import get_lessons_service
+
+    try:
+        lessons_service = get_lessons_service()
+
+        # Check if lesson exists first
+        lessons = lessons_service.get_lessons()
+        lesson_exists = any(lesson.get("id") == lesson_id for lesson in lessons)
+
+        if not lesson_exists:
+            return ToolResult(
+                success=False,
+                payload={
+                    "status": "not_found",
+                    "message": f"Aucune lesson trouvée avec l'ID {lesson_id}"
+                }
+            )
+
+        # Delete the lesson
+        lessons_service.delete_lesson(lesson_id)
+
+        logger.info(
+            "✅ Lesson deleted via tool",
+            extra={"lesson_id": lesson_id}
+        )
+
+        return ToolResult(
+            success=True,
+            payload={
+                "status": "lesson_deleted",
+                "lesson_id": lesson_id,
+                "message": f"Lesson #{lesson_id} supprimée de PostgreSQL."
+            },
+        )
+    except Exception as exc:
+        logger.error(
+            "❌ Failed to delete lesson via tool",
+            extra={"error": str(exc), "lesson_id": lesson_id},
+            exc_info=True
+        )
+        return ToolResult(
+            success=False,
+            payload={"error": f"Failed to delete lesson: {str(exc)}"}
+        )
+
+
 # Return predefined tool schemas for LLM function calling
 def get_tool_schemas():
     """Return OpenAI-compatible tool schemas."""
@@ -408,6 +546,10 @@ async def handle_tool_call(name: str, arguments: Any) -> ToolResult:
             return remove_agent(**args)
         if name == "add_lesson":
             return add_lesson_tool(**args)
+        if name == "get_lessons":
+            return get_lessons_tool(**args)
+        if name == "delete_lesson":
+            return delete_lesson_tool(**args)
 
         # Note: Concatenated tool names are now detected earlier in runtime.py
         # This allows us to provide better error messages to the LLM
