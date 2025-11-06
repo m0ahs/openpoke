@@ -153,7 +153,7 @@ async function handleLocalBackend(chatId, text) {
 // The backend will push responses directly to Telegram as they become available
 async function handleRailwayBackend(chatId, text) {
   const url = `${BACKEND_URL}${BACKEND_ENDPOINT}`;
-  const timeout = 10000; // 10 seconds - just for the initial request acceptance
+  const timeout = 30000; // 30 seconds - allows for Railway redeploys and cold starts
 
   try {
     const controller = new AbortController();
