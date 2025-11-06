@@ -52,10 +52,23 @@ async def _process_telegram_message_background(chat_id: str, message: str) -> No
         # If the runtime returns a final response (cases without send_message_to_user calls)
         # we need to send it to Telegram
         if result.response and result.response.strip():
+            logger.info(
+                f"📤 SENDING FINAL RESPONSE TO TELEGRAM (chat_id={chat_id})",
+                extra={
+                    "chat_id": chat_id,
+                    "response_length": len(result.response),
+                    "response_preview": result.response[:200]
+                }
+            )
             await telegram_service.send_message(chat_id, result.response)
             logger.info(
-                "Final response sent to Telegram",
+                "✅ Final response sent to Telegram",
                 extra={"chat_id": chat_id, "success": result.success}
+            )
+        else:
+            logger.info(
+                "ℹ️ No final response to send (messages sent via send_message_to_user tools)",
+                extra={"chat_id": chat_id}
             )
 
         logger.info(
@@ -73,10 +86,19 @@ async def _process_telegram_message_background(chat_id: str, message: str) -> No
             extra={"chat_id": chat_id, "error": str(exc)}
         )
 
-        # Send error message to user
-        error_msg = f"Désolé, j'ai rencontré un problème technique : {str(exc)[:100]}"
+        # Send SIMPLE, user-friendly error message
+        error_type = type(exc).__name__
+
+        if "RuntimeError" in error_type and "iteration limit" in str(exc):
+            error_msg = "Désolé, j'ai eu trop d'étapes à faire. Reformule ta question plus simplement ?"
+        elif "timeout" in str(exc).lower():
+            error_msg = "Ça prend trop de temps. Réessaie avec une question plus précise ?"
+        else:
+            error_msg = "Une erreur inattendue s'est produite. Réessaie ou demande autre chose ?"
+
         try:
             await telegram_service.send_message(chat_id, error_msg)
+            logger.info(f"Error message sent to Telegram chat {chat_id}")
         except Exception as send_exc:
             logger.error(
                 "Failed to send error message to Telegram",
