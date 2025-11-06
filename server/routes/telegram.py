@@ -1,9 +1,11 @@
 """Telegram-specific routes for handling bot messages."""
 
+import asyncio
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from ..agents.interaction_agent import InteractionAgentRuntime
+from ..services.telegram_service import get_telegram_service
 from ..logging_config import logger
 
 router = APIRouter(prefix="/telegram", tags=["telegram"])
@@ -17,22 +19,80 @@ class TelegramMessageRequest(BaseModel):
 
 class TelegramMessageResponse(BaseModel):
     """Response model for Telegram messages."""
-    response: str
-    success: bool
-    error: str | None = None
+    status: str
+    message: str
 
 
-@router.post("/message", response_model=TelegramMessageResponse)
+async def _process_telegram_message_background(chat_id: str, message: str) -> None:
+    """
+    Background task to process Telegram message asynchronously.
+
+    This runs independently and pushes responses to Telegram as they become available.
+    """
+    telegram_service = get_telegram_service()
+
+    try:
+        logger.info(
+            "Background processing started",
+            extra={
+                "chat_id": chat_id,
+                "message_preview": message[:100]
+            }
+        )
+
+        runtime = InteractionAgentRuntime()
+        result = await runtime.execute(
+            user_message=message,
+            telegram_chat_id=chat_id  # Enable async push notifications
+        )
+
+        # If the runtime returns a final response (cases without send_message_to_user calls)
+        # we need to send it to Telegram
+        if result.response and result.response.strip():
+            await telegram_service.send_message(chat_id, result.response)
+            logger.info(
+                "Final response sent to Telegram",
+                extra={"chat_id": chat_id, "success": result.success}
+            )
+
+        logger.info(
+            "Background processing completed",
+            extra={
+                "chat_id": chat_id,
+                "success": result.success,
+                "agents_used": result.execution_agents_used
+            }
+        )
+
+    except Exception as exc:
+        logger.exception(
+            "Error in background message processing",
+            extra={"chat_id": chat_id, "error": str(exc)}
+        )
+
+        # Send error message to user
+        error_msg = f"Désolé, j'ai rencontré un problème technique : {str(exc)[:100]}"
+        try:
+            await telegram_service.send_message(chat_id, error_msg)
+        except Exception as send_exc:
+            logger.error(
+                "Failed to send error message to Telegram",
+                extra={"chat_id": chat_id, "error": str(send_exc)}
+            )
+
+
+@router.post("/message", response_model=TelegramMessageResponse, status_code=202)
 async def handle_telegram_message(request: TelegramMessageRequest) -> TelegramMessageResponse:
     """
-    Handle incoming Telegram messages.
+    Handle incoming Telegram messages asynchronously.
 
-    This endpoint is specifically designed for the Telegram watcher to send messages
-    and receive responses without CORS restrictions.
+    This endpoint returns immediately with a 202 Accepted status.
+    The actual processing happens in the background, and responses are pushed
+    to Telegram as they become available through the Telegram API.
     """
     try:
         logger.info(
-            "Telegram message received",
+            "Telegram message received - launching background task",
             extra={
                 "chat_id": request.chat_id,
                 "message_length": len(request.message),
@@ -40,35 +100,19 @@ async def handle_telegram_message(request: TelegramMessageRequest) -> TelegramMe
             }
         )
 
-        runtime = InteractionAgentRuntime()
-        result = await runtime.execute(user_message=request.message)
+        # Launch background task without awaiting
+        asyncio.create_task(
+            _process_telegram_message_background(request.chat_id, request.message)
+        )
 
-        # Always return a response, even on errors
-        if result.response and result.response.strip():
-            return TelegramMessageResponse(
-                response=result.response,
-                success=result.success,
-                error=result.error
-            )
-
-        # If no response but success (e.g., wait tool used)
-        if result.success:
-            return TelegramMessageResponse(
-                response="Je n'ai pas généré de réponse pour ce message. Peut-être que c'était un doublon.",
-                success=True,
-                error=None
-            )
-
-        # If error but no response message
-        error_msg = result.error or "Une erreur s'est produite"
+        # Return immediately
         return TelegramMessageResponse(
-            response=f"Désolé, j'ai rencontré un problème : {error_msg}",
-            success=False,
-            error=error_msg
+            status="processing",
+            message="Message received and being processed"
         )
 
     except Exception as e:
-        logger.exception("Error handling Telegram message", extra={"error": str(e)})
+        logger.exception("Error launching background task", extra={"error": str(e)})
         raise HTTPException(
             status_code=500,
             detail=f"Internal server error: {str(e)}"
