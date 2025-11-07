@@ -1,4 +1,4 @@
-// Telegram Watcher for Seline
+// Telegram Watcher for Ariel
 // Supports both LOCAL (Python script) and RAILWAY (HTTP API) backends
 
 import TelegramBot from 'node-telegram-bot-api';
@@ -27,7 +27,7 @@ const BACKEND_ENDPOINT = process.env.BACKEND_ENDPOINT || '/api/v1/telegram/messa
 
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 
-console.log(`🚀 Seline Telegram Watcher initialisé (mode: ${BACKEND_MODE})${BACKEND_MODE === 'RAILWAY' ? ` - ${BACKEND_URL}` : ''}`);
+console.log(`🚀 Ariel Telegram Watcher initialisé (mode: ${BACKEND_MODE})${BACKEND_MODE === 'RAILWAY' ? ` - ${BACKEND_URL}` : ''}`);
 
 bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
@@ -153,7 +153,7 @@ async function handleLocalBackend(chatId, text) {
 // The backend will push responses directly to Telegram as they become available
 async function handleRailwayBackend(chatId, text) {
   const url = `${BACKEND_URL}${BACKEND_ENDPOINT}`;
-  const timeout = 10000; // 10 seconds - just for the initial request acceptance
+  const timeout = 30000; // 30 seconds - allows for Railway redeploys and cold starts
 
   try {
     const controller = new AbortController();

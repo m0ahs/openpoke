@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_APP_NAME = "Alyn Server"
 DEFAULT_APP_VERSION = "0.3.0"
-DEFAULT_MODEL = "minimax/minimax-m2:free"
+DEFAULT_MODEL = "google/gemini-2.0-flash-exp:free"
 
 
 def _env_int(name: str, fallback: int) -> int:
@@ -63,7 +63,7 @@ class Settings(BaseModel):
     interaction_agent_model: str = Field(default=_alyn_model)
     execution_agent_model: str = Field(default=_alyn_model)
     execution_agent_search_model: str = Field(default=_alyn_model)
-    summarizer_model: str = Field(default=os.getenv("SUMMARIZER_MODEL", "minimax/minimax-m2:free"))
+    summarizer_model: str = Field(default=os.getenv("SUMMARIZER_MODEL", "google/gemini-2.0-flash-exp:free"))
     email_classifier_model: str = Field(default=_alyn_model)
 
     # Credentials / integrations

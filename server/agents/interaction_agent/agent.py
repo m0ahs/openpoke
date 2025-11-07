@@ -68,6 +68,7 @@ def _generate_available_tools_section() -> str:
 def build_system_prompt() -> str:
     """Return the system prompt for the interaction agent with user profile information."""
     from ...services.lessons_learned import get_lessons_service
+    from ...services.user_memory import get_user_memory_service
 
     profile_store = get_user_profile()
     profile = profile_store.load()
@@ -83,6 +84,12 @@ def build_system_prompt() -> str:
     lessons_text = lessons_service.format_lessons_for_prompt(max_lessons=5)
     if lessons_text:
         sections.append(lessons_text)
+
+    # Add user memories section (contextual information about the user)
+    memory_service = get_user_memory_service()
+    memories_text = memory_service.format_memories_for_prompt(max_memories=5)
+    if memories_text:
+        sections.append(memories_text)
 
     # Add user profile section
     user_context = []

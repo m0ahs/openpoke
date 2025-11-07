@@ -1,4 +1,4 @@
-"""Lessons Learned system for Seline to improve from mistakes - PostgreSQL with JSON fallback."""
+"""Lessons Learned system for Ariel to improve from mistakes - PostgreSQL with JSON fallback."""
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -195,6 +195,50 @@ class LessonsLearnedService:
         filtered.sort(key=lambda x: x.get("occurrences", 1), reverse=True)
 
         return filtered
+
+    def delete_lesson(self, lesson_id: int) -> bool:
+        """
+        Delete a lesson by its ID.
+
+        Args:
+            lesson_id: The ID of the lesson to delete
+
+        Returns:
+            True if deleted successfully, False if lesson not found
+        """
+        if self._use_db:
+            # PostgreSQL mode
+            try:
+                db = SessionLocal()
+                try:
+                    lesson = db.query(LessonLearned).filter(LessonLearned.id == lesson_id).first()
+
+                    if not lesson:
+                        logger.warning(f"⚠️ Lesson #{lesson_id} not found in database")
+                        return False
+
+                    db.delete(lesson)
+                    db.commit()
+                    logger.info(f"🗑️ Deleted lesson #{lesson_id} from PostgreSQL")
+                    return True
+                finally:
+                    db.close()
+            except Exception as exc:
+                logger.error(f"❌ Failed to delete lesson from database: {exc}")
+                return False
+        else:
+            # JSON fallback mode
+            lessons = self._load_lessons()
+
+            # Find lesson by index (JSON doesn't have IDs, use list index)
+            if 0 <= lesson_id < len(lessons):
+                deleted_lesson = lessons.pop(lesson_id)
+                self._save_lessons(lessons)
+                logger.info(f"🗑️ Deleted lesson from JSON: {deleted_lesson.get('problem', '')[:50]}")
+                return True
+            else:
+                logger.warning(f"⚠️ Lesson index {lesson_id} out of range (total: {len(lessons)})")
+                return False
 
     def format_lessons_for_prompt(self, max_lessons: int = 10) -> str:
         """
