@@ -1,4 +1,4 @@
-"""Lessons Learned system for Seline to improve from mistakes - PostgreSQL with JSON fallback."""
+"""Lessons Learned system for Ariel to improve from mistakes - PostgreSQL with JSON fallback."""
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional

@@ -73,15 +73,15 @@ node server/services/telegram/telegram_watcher.js
 
 Vous devriez voir :
 ```
-🚀 Seline Telegram Watcher initialisé (mode: RAILWAY) - https://alyn-backend.up.railway.app
+🚀 Ariel Telegram Watcher initialisé (mode: RAILWAY) - https://alyn-backend.up.railway.app
 ```
 
 ## Utilisation
 
 1. Ouvrez Telegram et trouvez votre bot
-2. Envoyez un message : "Bonjour Seline !"
+2. Envoyez un message : "Bonjour Ariel !"
 3. Le watcher reçoit le message et l'envoie au backend Railway
-4. Seline traite le message et répond via Telegram
+4. Ariel traite le message et répond via Telegram
 
 ## Logs et Debugging
 
@@ -138,13 +138,13 @@ L'interface web reste accessible pour configurer les intégrations :
 
 ## Fonctionnalités Supportées
 
-✅ **Messages Telegram** : Envoyez des questions à Seline via Telegram
-✅ **Agents d'Exécution** : Seline peut lancer des agents pour rechercher, gérer des emails, etc.
+✅ **Messages Telegram** : Envoyez des questions à Ariel via Telegram
+✅ **Agents d'Exécution** : Ariel peut lancer des agents pour rechercher, gérer des emails, etc.
 ✅ **Gmail Integration** : Via Composio (configuré dans l'interface web)
 ✅ **Google Calendar** : Via Composio (configuré dans l'interface web)
 ✅ **Recherche Web** : Via outils de recherche intégrés
 ✅ **Rappels et Triggers** : Planifier des tâches récurrentes
-✅ **Feedback Utilisateur** : Seline vous informe toujours avant de déléguer à un agent
+✅ **Feedback Utilisateur** : Ariel vous informe toujours avant de déléguer à un agent
 
 ## Troubleshooting
 

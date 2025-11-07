@@ -2,7 +2,7 @@
 
 ## Overview
 
-Ce système utilise les **Railway Volumes** pour persister toutes les données de Seline de manière robuste et sécurisée.
+Ce système utilise les **Railway Volumes** pour persister toutes les données de Ariel de manière robuste et sécurisée.
 
 ## Configuration Railway
 
@@ -19,7 +19,7 @@ Ce système utilise les **Railway Volumes** pour persister toutes les données d
 ```
 /app/server/data/                    # Railway Volume mount point
 ├── user_profile.json                # Profil utilisateur
-├── lessons_learned.json             # Leçons apprises par Seline
+├── lessons_learned.json             # Leçons apprises par Ariel
 ├── metadata.json                    # Métadonnées système
 ├── backups/                         # Sauvegardes automatiques
 │   ├── user_profile_20250106_143022.json

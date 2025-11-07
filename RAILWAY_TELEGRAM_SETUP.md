@@ -152,7 +152,7 @@ Watcher PID: 456
 
 1. Ouvrez Telegram
 2. Trouvez votre bot (le nom que vous avez créé avec @BotFather)
-3. Envoyez un message : "Bonjour Seline !"
+3. Envoyez un message : "Bonjour Ariel !"
 4. Vous devriez recevoir une réponse !
 
 ## Architecture du Déploiement

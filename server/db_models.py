@@ -1,5 +1,5 @@
 """
-Database models for OpenPoke/Seline.
+Database models for OpenPoke/Ariel.
 
 SQLAlchemy ORM models for user data, conversation history, etc.
 """
